@@ -1,0 +1,243 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>OpenEhr</name>
+    </assembly>
+    <members>
+        <member name="T:OpenEhr.EhrDbResponse">
+            <summary>
+            
+            </summary>
+        </member>
+        <member name="P:OpenEhr.EhrDbResponse.EntityName">
+            <summary>
+            
+            </summary>
+        </member>
+        <member name="P:OpenEhr.EhrDbResponse.Code">
+            <summary>
+            
+            </summary>
+        </member>
+        <member name="P:OpenEhr.EhrDbResponse.OperationType">
+            <summary>
+            
+            </summary>
+        </member>
+        <member name="P:OpenEhr.EhrDbResponse.Message">
+            <summary>
+            
+            </summary>
+        </member>
+        <member name="M:OpenEhr.EhrDbResponse.GetMessage">
+            <summary>
+            
+            </summary>
+            <returns></returns>
+        </member>
+        <member name="T:OpenEhr.EhrDbOperationType">
+            <summary>
+            
+            </summary>
+        </member>
+        <member name="F:OpenEhr.EhrDbOperationType.Create">
+            <summary>
+            
+            </summary>
+        </member>
+        <member name="F:OpenEhr.EhrDbOperationType.Update">
+            <summary>
+            
+            </summary>
+        </member>
+        <member name="F:OpenEhr.EhrDbOperationType.SetStatus">
+            <summary>
+            
+            </summary>
+        </member>
+        <member name="T:OpenEhr.EhrDbTriggerStatus">
+            <summary>
+            
+            </summary>
+        </member>
+        <member name="F:OpenEhr.EhrDbTriggerStatus.ACTIVE">
+            <summary>
+            
+            </summary>
+        </member>
+        <member name="F:OpenEhr.EhrDbTriggerStatus.DEACTIVATED">
+            <summary>
+            
+            </summary>
+        </member>
+        <member name="T:OpenEhr.EhrConnection">
+            <summary>
+            
+            </summary>
+        </member>
+        <member name="F:OpenEhr.EhrConnection.EhrConnectionLogger">
+            <summary>
+            
+            </summary>
+        </member>
+        <member name="M:OpenEhr.EhrConnection.#ctor(System.String,System.String,System.String,Microsoft.Extensions.Logging.ILogger{OpenEhr.EhrConnection})">
+            <summary>
+            Builds a closed connection object ready to be used.
+            </summary>
+            <param name="url"></param>
+            <param name="login"></param>
+            <param name="password"></param>
+            <param name="ehrConnectionLogger"></param>
+        </member>
+        <member name="M:OpenEhr.EhrConnection.Open">
+            <summary>
+            
+            </summary>
+        </member>
+        <member name="M:OpenEhr.EhrConnection.HasEventTrigger(OpenEhr.Triggers.EhrDbEventTrigger)">
+            <summary>
+                Ensures that EHR has trigger up and running
+            </summary>
+            <param name="trigger"></param>
+            <returns></returns>
+        </member>
+        <member name="M:OpenEhr.EhrConnection.GetTrigger(OpenEhr.Triggers.EhrDbEventTrigger)">
+            <summary>
+                Gets EHR trigger by name
+            </summary>
+            <param name="trigger"></param>
+            <returns></returns>
+        </member>
+        <member name="M:OpenEhr.EhrConnection.CreateEventTrigger(OpenEhr.Triggers.EhrDbEventTrigger)">
+            <summary>
+                Creates EHR event trigger
+            </summary>
+            <param name="trigger"></param>
+            <returns></returns>
+        </member>
+        <member name="M:OpenEhr.EhrConnection.UpdateTrigger(OpenEhr.Triggers.EhrDbEventTrigger)">
+            <summary>
+                Updates EHR event trigger
+            </summary>
+            <param name="trigger"></param>
+            <returns></returns>
+        </member>
+        <member name="M:OpenEhr.EhrConnection.SetTriggerStatus(OpenEhr.Triggers.EhrDbEventTrigger,OpenEhr.EhrDbTriggerStatus)">
+            <summary>
+                Updates EHR trigger status
+            </summary>
+            <param name="trigger"></param>
+            <param name="status"></param>
+            <returns></returns>
+        </member>
+        <member name="M:OpenEhr.EhrConnection.HasView(OpenEhr.Views.EhrDbView)">
+            <summary>
+                Ensures that EHR has view up and running
+            </summary>
+            <param name="view"></param>
+            <returns></returns>
+        </member>
+        <member name="M:OpenEhr.EhrConnection.GetView(OpenEhr.Views.EhrDbView)">
+            <summary>
+                Gets EHR view by name
+            </summary>
+            <param name="view"></param>
+            <returns></returns>
+        </member>
+        <member name="M:OpenEhr.EhrConnection.CreateView(OpenEhr.Views.EhrDbView)">
+            <summary>
+                Creates EHR event view
+            </summary>
+            <param name="view"></param>
+            <returns></returns>
+        </member>
+        <member name="M:OpenEhr.EhrConnection.UpdateView(OpenEhr.Views.EhrDbView)">
+            <summary>
+                Updates EHR event view
+            </summary>
+            <param name="view"></param>
+            <returns></returns>
+        </member>
+        <member name="M:OpenEhr.EhrConnection.DeleteComposition(System.Guid)">
+            <summary>
+                Marks target composition as deleted
+            </summary>
+            <param name="id"></param>
+            <returns></returns>
+        </member>
+        <member name="M:OpenEhr.EhrConnection.RestoreComposition(System.Guid)">
+            <summary>
+                Restores target composition
+            </summary>
+            <param name="id"></param>
+            <returns></returns>
+        </member>
+        <member name="M:OpenEhr.EhrConnection.GetCompositions(System.Guid)">
+            <summary>
+                Gets all compositions for specified <paramref name="ehrId" />
+            </summary>
+            <param name="ehrId"></param>
+            <returns></returns>
+        </member>
+        <member name="M:OpenEhr.EhrConnection.GetCompleteCompositions(System.Guid)">
+            <summary>
+                Gets all compositions with complete lifecycleState for specified <paramref name="ehrId" />.
+            </summary>
+            <param name="ehrId"></param>
+            <returns></returns>
+        </member>
+        <member name="M:OpenEhr.EhrConnection.GetCompleteCompositionsByEhrCaseId(System.Guid)">
+            <summary>
+                Gets all compositions with complete lifecycleState for specified <paramref name="ehrCaseId" />.
+            </summary>
+            <param name="ehrCaseId"></param>
+            <returns></returns>
+        </member>
+        <member name="M:OpenEhr.EhrConnection.GetCompositionsAllVersions(System.Guid)">
+            <summary>
+            
+            </summary>
+            <param name="ehrId"></param>
+            <returns></returns>
+        </member>
+        <member name="M:OpenEhr.EhrConnection.GetCompositionTags(System.String)">
+            <summary>
+            
+            </summary>
+            <param name="compositionUid"></param>
+            <returns></returns>
+            <exception cref="T:System.Exception"></exception>
+        </member>
+        <member name="M:OpenEhr.EhrConnection.GetCompositionTagsAsync(System.String)">
+            <summary>
+            
+            </summary>
+            <param name="compositionUid"></param>
+            <returns></returns>
+            <exception cref="T:System.Exception"></exception>
+        </member>
+        <member name="M:OpenEhr.EhrConnection.GetCompositionsAllVersions(System.Guid,System.DateTime,System.DateTime)">
+            <summary>
+            
+            </summary>
+            <param name="ehrId"></param>
+            <param name="dtBeg"></param>
+            <param name="dtEnd"></param>
+            <returns></returns>
+        </member>
+        <member name="M:OpenEhr.EhrConnection.Reindex(System.Guid)">
+            <summary>
+                Reindex target EHR Content
+            </summary>
+            <param name="ehrId"></param>
+            <returns></returns>
+        </member>
+        <member name="M:OpenEhr.EhrConnection.RepairCase(System.Guid)">
+            <summary>
+                Repairs specified EHR by reindex, delete and restore all compositions
+            </summary>
+            <param name="ehrId"></param>
+            <returns></returns>
+        </member>
+    </members>
+</doc>

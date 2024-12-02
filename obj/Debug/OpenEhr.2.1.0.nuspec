@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2012/06/nuspec.xsd">
+  <metadata>
+    <id>OpenEhr</id>
+    <version>2.1.0</version>
+    <authors>OpenEhr</authors>
+    <description>Package Description</description>
+    <repository type="git" commit="709c9d23d84cf8ada298a7a95e3e996000b0094f" />
+    <dependencies>
+      <group targetFramework="net9.0">
+        <dependency id="EMIAS.DateTimeExtensions" version="1.1.0" exclude="Build,Analyzers" />
+        <dependency id="Microsoft.Extensions.Logging" version="9.0.0" exclude="Build,Analyzers" />
+        <dependency id="Microsoft.Extensions.Logging.Console" version="9.0.0" exclude="Build,Analyzers" />
+        <dependency id="Newtonsoft.Json" version="13.0.3" exclude="Build,Analyzers" />
+      </group>
+    </dependencies>
+  </metadata>
+  <files>
+    <file src="/Users/chu/Documents/emias-sl/OpenEhr/bin/Debug/net9.0/OpenEhr.dll" target="lib/net9.0/OpenEhr.dll" />
+    <file src="/Users/chu/Documents/emias-sl/OpenEhr/bin/Debug/net9.0/OpenEhr.xml" target="lib/net9.0/OpenEhr.xml" />
+  </files>
+</package>

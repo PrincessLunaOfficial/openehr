@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+        <Version>2.1.0</Version>
+        <LangVersion>12</LangVersion>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="EMIAS.DateTimeExtensions" Version="1.1.0" />
+        <PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.0" />
+        <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.0" />
+        <PackageReference Include="Newtonsoft.Json" Version="13.0.3"/>
+    </ItemGroup>
+
+</Project>

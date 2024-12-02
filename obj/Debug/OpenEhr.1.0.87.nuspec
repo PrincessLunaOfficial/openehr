@@ -1,0 +1,21 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2012/06/nuspec.xsd">
+  <metadata>
+    <id>OpenEhr</id>
+    <version>1.0.87</version>
+    <authors>OpenEhr</authors>
+    <description>Package Description</description>
+    <repository type="git" />
+    <dependencies>
+      <group targetFramework="net8.0">
+        <dependency id="EMIAS.DateTimeExtensions" version="1.0.10" exclude="Build,Analyzers" />
+        <dependency id="Microsoft.Extensions.Logging" version="8.0.0" exclude="Build,Analyzers" />
+        <dependency id="Microsoft.Extensions.Logging.Console" version="8.0.0" exclude="Build,Analyzers" />
+        <dependency id="Newtonsoft.Json" version="13.0.3" exclude="Build,Analyzers" />
+      </group>
+    </dependencies>
+  </metadata>
+  <files>
+    <file src="C:\Users\aby32\Desktop\emias-sl\OpenEhr\bin\Debug\net8.0\OpenEhr.dll" target="lib\net8.0\OpenEhr.dll" />
+  </files>
+</package>

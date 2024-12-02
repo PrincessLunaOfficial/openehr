@@ -1,0 +1,12 @@
+C:\Users\aby32\Desktop\emias-sl\OpenEhr\bin\Debug\net8.0\OpenEhr.deps.json
+C:\Users\aby32\Desktop\emias-sl\OpenEhr\bin\Debug\net8.0\OpenEhr.dll
+C:\Users\aby32\Desktop\emias-sl\OpenEhr\bin\Debug\net8.0\OpenEhr.pdb
+C:\Users\aby32\Desktop\emias-sl\OpenEhr\obj\Debug\net8.0\OpenEhr.csproj.AssemblyReference.cache
+C:\Users\aby32\Desktop\emias-sl\OpenEhr\obj\Debug\net8.0\OpenEhr.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\aby32\Desktop\emias-sl\OpenEhr\obj\Debug\net8.0\OpenEhr.AssemblyInfoInputs.cache
+C:\Users\aby32\Desktop\emias-sl\OpenEhr\obj\Debug\net8.0\OpenEhr.AssemblyInfo.cs
+C:\Users\aby32\Desktop\emias-sl\OpenEhr\obj\Debug\net8.0\OpenEhr.csproj.CoreCompileInputs.cache
+C:\Users\aby32\Desktop\emias-sl\OpenEhr\obj\Debug\net8.0\OpenEhr.dll
+C:\Users\aby32\Desktop\emias-sl\OpenEhr\obj\Debug\net8.0\refint\OpenEhr.dll
+C:\Users\aby32\Desktop\emias-sl\OpenEhr\obj\Debug\net8.0\OpenEhr.pdb
+C:\Users\aby32\Desktop\emias-sl\OpenEhr\obj\Debug\net8.0\ref\OpenEhr.dll

@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2012/06/nuspec.xsd">
+  <metadata>
+    <id>OpenEhr</id>
+    <version>1.0.8</version>
+    <authors>OpenEhr</authors>
+    <description>Package Description</description>
+    <dependencies>
+      <group targetFramework="net7.0">
+        <dependency id="Newtonsoft.Json" version="13.0.3" exclude="Build,Analyzers" />
+      </group>
+    </dependencies>
+  </metadata>
+  <files>
+    <file src="C:\Users\aby32\Desktop\emias-sl\OpenEhr\bin\Debug\net7.0\OpenEhr.dll" target="lib\net7.0\OpenEhr.dll" />
+  </files>
+</package>
