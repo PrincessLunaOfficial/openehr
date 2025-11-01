@@ -2,10 +2,11 @@
 using System.Net.Http.Headers;
 using System.Text;
 using EMIAS.DateTimeExtensions;
-using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
+using OpenEhr.Dto;
 using OpenEhr.Triggers;
 using OpenEhr.Views;
+using Serilog;
 
 namespace OpenEhr;
 
@@ -18,17 +19,14 @@ public readonly struct EhrDbResponse
     /// 
     /// </summary>
     public string? EntityName { get; init; }
-
     /// <summary>
     /// 
     /// </summary>
     public HttpStatusCode? Code { get; init; }
-
     /// <summary>
     /// 
     /// </summary>
     public EhrDbOperationType OperationType { get; init; }
-
     /// <summary>
     /// 
     /// </summary>
@@ -40,10 +38,9 @@ public readonly struct EhrDbResponse
     /// <returns></returns>
     public string GetMessage()
     {
-        var sb = new StringBuilder();
+        StringBuilder sb = new StringBuilder();
         sb.AppendLine($"EhrDb: Operation {OperationType.ToString()} for {EntityName} returned {Code}");
-        if (Code != HttpStatusCode.OK &&
-            Code != HttpStatusCode.NoContent)
+        if (Code != HttpStatusCode.OK && Code != HttpStatusCode.NoContent)
             sb.AppendLine(Message);
         return sb.ToString();
     }
@@ -58,12 +55,10 @@ public enum EhrDbOperationType
     /// 
     /// </summary>
     Create,
-
     /// <summary>
     /// 
     /// </summary>
     Update,
-
     /// <summary>
     /// 
     /// </summary>
@@ -79,7 +74,6 @@ public enum EhrDbTriggerStatus
     /// 
     /// </summary>
     ACTIVE,
-
     /// <summary>
     /// 
     /// </summary>
@@ -92,20 +86,13 @@ public enum EhrDbTriggerStatus
 public class EhrConnection
 {
     /// <summary>
-    /// 
-    /// </summary>
-    public ILogger<EhrConnection> EhrConnectionLogger;
-
-    /// <summary>
     /// Builds a closed connection object ready to be used.
     /// </summary>
     /// <param name="url"></param>
     /// <param name="login"></param>
     /// <param name="password"></param>
-    /// <param name="ehrConnectionLogger"></param>
-    public EhrConnection(string url, string login, string password, ILogger<EhrConnection> ehrConnectionLogger)
+    public EhrConnection(string url, string login, string password)
     {
-        this.EhrConnectionLogger = ehrConnectionLogger;
         Url = url;
         if (!Url.EndsWith("/", StringComparison.Ordinal))
             Url += "/";
@@ -116,7 +103,6 @@ public class EhrConnection
     private string Login { get; }
     private string Password { get; }
     internal string Url { get; set; }
-
     internal string AdminUrl => Url.Replace("rest/v1", "admin/rest/v1");
     internal HttpClient Client { get; private set; } = null!;
     private bool Initialized { get; set; }
@@ -127,7 +113,7 @@ public class EhrConnection
     public void Open()
     {
         if (Initialized) return;
-        EhrConnectionLogger.LogDebug("Initializing HttpClient connection");
+        Log.Logger.Debug("Initializing HttpClient connection");
         Client = new HttpClient();
         Client.Timeout = TimeSpan.FromSeconds(1024);
         Client.DefaultRequestHeaders.ConnectionClose = false;
@@ -135,7 +121,7 @@ public class EhrConnection
         Client.DefaultRequestHeaders.TryAddWithoutValidation("Wait-For-Commit", "true");
         Client.DefaultRequestHeaders.TryAddWithoutValidation("Connection", "keep-alive");
         Initialized = true;
-        EhrConnectionLogger.LogDebug("HttpClient has been initialized and is ready for use");
+        Log.Logger.Debug("HttpClient has been initialized and is ready for use");
     }
 
     internal string GetCredentials()
@@ -152,47 +138,38 @@ public class EhrConnection
     /// <returns></returns>
     public async Task<EhrDbResponse[]> HasEventTrigger(EhrDbEventTrigger trigger)
     {
-        var result = new EhrDbResponse[2];
-        var eventTrigger = await GetTrigger(trigger);
-
+        EhrDbResponse[] result = new EhrDbResponse[2];
+        EhrDbEventTrigger? eventTrigger = await GetTrigger(trigger);
         if (eventTrigger == null)
         {
             result[0] = await CreateEventTrigger(trigger);
             eventTrigger = await GetTrigger(trigger);
-
             if (eventTrigger == null)
             {
-                EhrConnectionLogger.LogError("Failed to get the event trigger after creation");
+                Log.Logger.Error("Failed to get the event trigger after creation");
                 return result;
             }
-
             result[1] = await SetTriggerStatus(eventTrigger, EhrDbTriggerStatus.ACTIVE);
             return result;
         }
-
-        eventTrigger.aqls = trigger.aqls;
-        if (!string.IsNullOrEmpty(trigger.httpResultUrl))
-            eventTrigger.httpResultUrl = trigger.httpResultUrl;
-
-        eventTrigger.archetypeIds = trigger.archetypeIds;
-        eventTrigger.templateIds = trigger.templateIds;
-        if (!string.IsNullOrEmpty(trigger.kafkaResultTopic))
-            eventTrigger.kafkaResultTopic = trigger.kafkaResultTopic;
-        eventTrigger.eventTimeToLiveHours = trigger.eventTimeToLiveHours;
-        eventTrigger.repeatIntervalMinutes = trigger.repeatIntervalMinutes;
-        eventTrigger.name = trigger.name;
+        eventTrigger.Aqls = trigger.Aqls;
+        if (!string.IsNullOrEmpty(trigger.HttpResultUrl))
+            eventTrigger.HttpResultUrl = trigger.HttpResultUrl;
+        eventTrigger.ArchetypeIds = trigger.ArchetypeIds;
+        eventTrigger.TemplateIds = trigger.TemplateIds;
+        if (!string.IsNullOrEmpty(trigger.KafkaResultTopic))
+            eventTrigger.KafkaResultTopic = trigger.KafkaResultTopic;
+        eventTrigger.EventTimeToLiveHours = trigger.EventTimeToLiveHours;
+        eventTrigger.RepeatIntervalMinutes = trigger.RepeatIntervalMinutes;
+        eventTrigger.Name = trigger.Name;
         result[0] = await UpdateTrigger(eventTrigger);
-
         eventTrigger = await GetTrigger(trigger);
-
         if (eventTrigger == null)
         {
-            EhrConnectionLogger.LogError("Failed to get the event trigger after updated");
+            Log.Logger.Error("Failed to get the event trigger after updated");
             return result;
         }
-
         result[1] = await SetTriggerStatus(eventTrigger, EhrDbTriggerStatus.ACTIVE);
-
         return result;
     }
 
@@ -205,19 +182,17 @@ public class EhrConnection
     {
         try
         {
-            var requestMessage = new HttpRequestMessage(HttpMethod.Get, $"{Url}trigger/?name={trigger.name}");
+            HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod.Get, $"{Url}trigger/?name={trigger.Name}");
             requestMessage.Headers.TryAddWithoutValidation("Authorization", GetCredentials());
-            var response = await Client.SendAsync(requestMessage);
-            var responseBody = await response.Content.ReadAsStringAsync();
-
+            HttpResponseMessage response = await Client.SendAsync(requestMessage);
+            string responseBody = await response.Content.ReadAsStringAsync();
             if (response.StatusCode == HttpStatusCode.OK)
                 return JsonConvert.DeserializeObject<EhrDbEventTrigger>(responseBody);
         }
         catch (Exception ex)
         {
-            EhrConnectionLogger.LogError($"Failed to get trigger {trigger.name}: {ex.Message}");
+            Log.Logger.Error($"Failed to get trigger {trigger.Name}: {ex.Message}");
         }
-
         return null;
     }
 
@@ -228,38 +203,22 @@ public class EhrConnection
     /// <returns></returns>
     private async Task<EhrDbResponse> CreateEventTrigger(EhrDbEventTrigger trigger)
     {
-        var serializedTrigger = JsonConvert.SerializeObject(trigger, Formatting.Indented, new JsonSerializerSettings
-        {
-            NullValueHandling = NullValueHandling.Ignore
-        });
+        string serializedTrigger = JsonConvert.SerializeObject(trigger, Formatting.Indented, new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
         HttpResponseMessage? response = null;
         try
         {
-            var content = new StringContent(serializedTrigger, null, "application/json");
-            var requestMessage = new HttpRequestMessage(HttpMethod.Post, $"{Url}trigger/create");
+            StringContent content = new StringContent(serializedTrigger, null, "application/json");
+            HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod.Post, $"{Url}trigger/create");
             requestMessage.Headers.TryAddWithoutValidation("Authorization", GetCredentials());
             requestMessage.Content = content;
             response = await Client.SendAsync(requestMessage);
-            return new EhrDbResponse
-            {
-                EntityName = trigger.name,
-                Code = response.StatusCode,
-                OperationType = EhrDbOperationType.Create,
-                Message = serializedTrigger
-            };
+            return new EhrDbResponse { EntityName = trigger.Name, Code = response.StatusCode, OperationType = EhrDbOperationType.Create, Message = serializedTrigger };
         }
         catch (Exception ex)
         {
-            EhrConnectionLogger.LogError(
-                $"Failed to create trigger {trigger.name}: {ex.Message}\r\n{serializedTrigger}");
+            Log.Logger.Error($"Failed to create trigger {trigger.Name}: {ex.Message}\r\n{serializedTrigger}");
             // Depends on the requirement, you may or may not want to return a response after logging an error
-            return new EhrDbResponse
-            {
-                EntityName = trigger.name,
-                Code = response?.StatusCode ?? HttpStatusCode.InternalServerError,
-                OperationType = EhrDbOperationType.Create,
-                Message = "An error occurred while creating the trigger"
-            };
+            return new EhrDbResponse { EntityName = trigger.Name, Code = response?.StatusCode ?? HttpStatusCode.InternalServerError, OperationType = EhrDbOperationType.Create, Message = "An error occurred while creating the trigger" };
         }
     }
 
@@ -270,41 +229,24 @@ public class EhrConnection
     /// <returns></returns>
     private async Task<EhrDbResponse> UpdateTrigger(EhrDbEventTrigger trigger)
     {
-        var serializedTrigger = JsonConvert.SerializeObject(trigger, Formatting.Indented, new JsonSerializerSettings
-        {
-            NullValueHandling = NullValueHandling.Ignore
-        });
+        string serializedTrigger = JsonConvert.SerializeObject(trigger, Formatting.Indented, new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
         HttpResponseMessage? response = null;
-
         try
         {
-            var id = (int)trigger.id!;
-            trigger.id = null;
-            var content = new StringContent(serializedTrigger, null, "application/json");
-            var requestMessage = new HttpRequestMessage(HttpMethod.Put, $"{Url}trigger/update/{id}");
+            int id = (int)trigger.Id!;
+            trigger.Id = null;
+            StringContent content = new StringContent(serializedTrigger, null, "application/json");
+            HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod.Put, $"{Url}trigger/update/{id}");
             requestMessage.Headers.TryAddWithoutValidation("Authorization", GetCredentials());
             requestMessage.Content = content;
             response = await Client.SendAsync(requestMessage);
-            return new EhrDbResponse
-            {
-                EntityName = trigger.name,
-                Code = response.StatusCode,
-                OperationType = EhrDbOperationType.Update,
-                Message = serializedTrigger
-            };
+            return new EhrDbResponse { EntityName = trigger.Name, Code = response.StatusCode, OperationType = EhrDbOperationType.Update, Message = serializedTrigger };
         }
         catch (Exception ex)
         {
-            EhrConnectionLogger.LogError(
-                $"Failed to update trigger {trigger.name}: {ex.Message}\r\n{serializedTrigger}");
+            Log.Logger.Error($"Failed to update trigger {trigger.Name}: {ex.Message}\r\n{serializedTrigger}");
             // Depends on the requirement, you may or may not want to return a response after logging an error
-            return new EhrDbResponse
-            {
-                EntityName = trigger.name,
-                Code = response?.StatusCode ?? HttpStatusCode.InternalServerError,
-                OperationType = EhrDbOperationType.Update,
-                Message = "An error occurred while updating the trigger"
-            };
+            return new EhrDbResponse { EntityName = trigger.Name, Code = response?.StatusCode ?? HttpStatusCode.InternalServerError, OperationType = EhrDbOperationType.Update, Message = "An error occurred while updating the trigger" };
         }
     }
 
@@ -316,40 +258,22 @@ public class EhrConnection
     /// <returns></returns>
     private async Task<EhrDbResponse> SetTriggerStatus(EhrDbEventTrigger trigger, EhrDbTriggerStatus status)
     {
-        var serializedTrigger = JsonConvert.SerializeObject(trigger, Formatting.Indented, new JsonSerializerSettings
-        {
-            NullValueHandling = NullValueHandling.Ignore
-        });
+        string serializedTrigger = JsonConvert.SerializeObject(trigger, Formatting.Indented, new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
         HttpResponseMessage? response = null;
-
         try
         {
-            var content = new StringContent(serializedTrigger, null, "application/json");
-            var requestMessage =
-                new HttpRequestMessage(HttpMethod.Put, $"{Url}trigger/{trigger.id}/status/{status.ToString()}");
+            StringContent content = new StringContent(serializedTrigger, null, "application/json");
+            HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod.Put, $"{Url}trigger/{trigger.Id}/status/{status.ToString()}");
             requestMessage.Headers.TryAddWithoutValidation("Authorization", GetCredentials());
             requestMessage.Content = content;
             response = await Client.SendAsync(requestMessage);
-            return new EhrDbResponse
-            {
-                EntityName = trigger.name,
-                Code = response.StatusCode,
-                OperationType = EhrDbOperationType.SetStatus,
-                Message = serializedTrigger
-            };
+            return new EhrDbResponse { EntityName = trigger.Name, Code = response.StatusCode, OperationType = EhrDbOperationType.SetStatus, Message = serializedTrigger };
         }
         catch (Exception ex)
         {
-            EhrConnectionLogger.LogError(
-                $"Failed to set status for trigger {trigger.name}: {ex.Message}\r\n{serializedTrigger}");
+            Log.Logger.Error($"Failed to set status for trigger {trigger.Name}: {ex.Message}\r\n{serializedTrigger}");
             // Depends on the requirement, you may or may not want to return a response after logging an error
-            return new EhrDbResponse
-            {
-                EntityName = trigger.name,
-                Code = response?.StatusCode ?? HttpStatusCode.InternalServerError,
-                OperationType = EhrDbOperationType.SetStatus,
-                Message = "An error occurred while setting the status of the trigger"
-            };
+            return new EhrDbResponse { EntityName = trigger.Name, Code = response?.StatusCode ?? HttpStatusCode.InternalServerError, OperationType = EhrDbOperationType.SetStatus, Message = "An error occurred while setting the status of the trigger" };
         }
     }
 
@@ -364,18 +288,16 @@ public class EhrConnection
     /// <returns></returns>
     public async Task<EhrDbResponse[]> HasView(EhrDbView view)
     {
-        var result = new EhrDbResponse[1];
-        var eventView = await GetView(view);
+        EhrDbResponse[] result = new EhrDbResponse[1];
+        EhrDbView? eventView = await GetView(view);
         if (eventView == null)
         {
             result[0] = await CreateView(view);
             return result;
         }
-
-        eventView.js = view.js;
-        eventView.name = view.name;
+        eventView.Js = view.Js;
+        eventView.Name = view.Name;
         result[0] = await UpdateView(eventView);
-
         return result;
     }
 
@@ -388,17 +310,16 @@ public class EhrConnection
     {
         try
         {
-            var requestMessage = new HttpRequestMessage(HttpMethod.Get, $"{Url}view/{view.name}");
+            HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod.Get, $"{Url}view/{view.Name}");
             requestMessage.Headers.TryAddWithoutValidation("Authorization", GetCredentials());
-            var response = await Client.SendAsync(requestMessage);
-            var responseBody = await response.Content.ReadAsStringAsync();
+            HttpResponseMessage response = await Client.SendAsync(requestMessage);
+            string responseBody = await response.Content.ReadAsStringAsync();
             if (response.StatusCode == HttpStatusCode.OK) return JsonConvert.DeserializeObject<EhrDbView>(responseBody);
         }
         catch (Exception ex)
         {
-            throw new Exception($"Failed to get view {view.name}: {ex.Message}");
+            throw new Exception($"Failed to get view {view.Name}: {ex.Message}");
         }
-
         return null;
     }
 
@@ -409,36 +330,20 @@ public class EhrConnection
     /// <returns></returns>
     private async Task<EhrDbResponse> CreateView(EhrDbView view)
     {
-        var serializedView = JsonConvert.SerializeObject(view, Formatting.Indented, new JsonSerializerSettings
-        {
-            NullValueHandling = NullValueHandling.Ignore
-        });
+        string serializedView = JsonConvert.SerializeObject(view, Formatting.Indented, new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
         HttpResponseMessage? response = null;
-
         try
         {
-            var content = new StringContent(serializedView, null, "application/json");
-            var requestMessage = new HttpRequestMessage(HttpMethod.Post, $"{Url}view/create");
+            StringContent content = new StringContent(serializedView, null, "application/json");
+            HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod.Post, $"{Url}view/create");
             requestMessage.Headers.TryAddWithoutValidation("Authorization", GetCredentials());
             requestMessage.Content = content;
             response = await Client.SendAsync(requestMessage);
-            return new EhrDbResponse
-            {
-                EntityName = view.name,
-                Code = response.StatusCode,
-                OperationType = EhrDbOperationType.Create,
-                Message = serializedView
-            };
+            return new EhrDbResponse { EntityName = view.Name, Code = response.StatusCode, OperationType = EhrDbOperationType.Create, Message = serializedView };
         }
         catch (Exception ex)
         {
-            return new EhrDbResponse
-            {
-                EntityName = view.name,
-                Code = response?.StatusCode,
-                OperationType = EhrDbOperationType.Create,
-                Message = $"{ex.Message}\r\n{serializedView}"
-            };
+            return new EhrDbResponse { EntityName = view.Name, Code = response?.StatusCode, OperationType = EhrDbOperationType.Create, Message = $"{ex.Message}\r\n{serializedView}" };
         }
     }
 
@@ -449,38 +354,22 @@ public class EhrConnection
     /// <returns></returns>
     private async Task<EhrDbResponse> UpdateView(EhrDbView view)
     {
-        var serializedView = JsonConvert.SerializeObject(view, Formatting.Indented, new JsonSerializerSettings
-        {
-            NullValueHandling = NullValueHandling.Ignore
-        });
+        string serializedView = JsonConvert.SerializeObject(view, Formatting.Indented, new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
         HttpResponseMessage? response = null;
-
         try
         {
-            var id = (int)view.id!;
-            view.id = null;
-            var content = new StringContent(serializedView, null, "application/json");
-            var requestMessage = new HttpRequestMessage(HttpMethod.Put, $"{Url}view/update/{id}");
+            int id = (int)view.Id!;
+            view.Id = null;
+            StringContent content = new StringContent(serializedView, null, "application/json");
+            HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod.Put, $"{Url}view/update/{id}");
             requestMessage.Headers.TryAddWithoutValidation("Authorization", GetCredentials());
             requestMessage.Content = content;
             response = await Client.SendAsync(requestMessage);
-            return new EhrDbResponse
-            {
-                EntityName = view.name,
-                Code = response.StatusCode,
-                OperationType = EhrDbOperationType.Update,
-                Message = serializedView
-            };
+            return new EhrDbResponse { EntityName = view.Name, Code = response.StatusCode, OperationType = EhrDbOperationType.Update, Message = serializedView };
         }
         catch (Exception ex)
         {
-            return new EhrDbResponse
-            {
-                EntityName = view.name,
-                Code = response?.StatusCode,
-                OperationType = EhrDbOperationType.Update,
-                Message = $"{ex.Message}\r\n{serializedView}"
-            };
+            return new EhrDbResponse { EntityName = view.Name, Code = response?.StatusCode, OperationType = EhrDbOperationType.Update, Message = $"{ex.Message}\r\n{serializedView}" };
         }
     }
 
@@ -495,9 +384,9 @@ public class EhrConnection
     {
         try
         {
-            var requestMessage = new HttpRequestMessage(HttpMethod.Delete, $"{Url}composition/{id}");
+            HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod.Delete, $"{Url}composition/{id}");
             requestMessage.Headers.TryAddWithoutValidation("Authorization", GetCredentials());
-            var response = await Client.SendAsync(requestMessage);
+            HttpResponseMessage response = await Client.SendAsync(requestMessage);
             response.EnsureSuccessStatusCode();
         }
         catch (Exception ex)
@@ -515,9 +404,9 @@ public class EhrConnection
     {
         try
         {
-            var requestMessage = new HttpRequestMessage(HttpMethod.Put, $"{Url}composition/{id}/restore");
+            HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod.Put, $"{Url}composition/{id}/restore");
             requestMessage.Headers.TryAddWithoutValidation("Authorization", GetCredentials());
-            var response = await Client.SendAsync(requestMessage);
+            HttpResponseMessage response = await Client.SendAsync(requestMessage);
             response.EnsureSuccessStatusCode();
         }
         catch (Exception ex)
@@ -533,7 +422,7 @@ public class EhrConnection
     /// <returns></returns>
     public async Task<OpenEhrDocumetModel[]> GetCompositions(Guid ehrId)
     {
-        var result = new List<OpenEhrDocumetModel>();
+        List<OpenEhrDocumetModel> result = new List<OpenEhrDocumetModel>();
         const string query = @"SELECT c/context/start_time/value as start_time
                           , c/context/other_context[at0001]/items[openEHR-EHR-CLUSTER.composition_context_details*]/items[at0035]/value/id as ehr_case_id
                           , c/name/value as name
@@ -552,28 +441,27 @@ public class EhrConnection
                         CONTAINS COMPOSITION c 
                         WHERE e/ehr_id/value = :ehr_id
                         LIMIT 10000";
-        var com = new AqlCommand(query, this);
+        AqlCommand com = new AqlCommand(query, this);
         com.Parameters.AddWithValue("ehr_id", ehrId);
-        var reader = await com.ExecuteReaderAsync();
+        AQLDataReader reader = await com.ExecuteReaderAsync();
         while (await reader.ReadAsync())
             result.Add(new OpenEhrDocumetModel
             {
-                start_time = reader.GetDateTime("start_time"),
-                ehr_case_id = reader.GetGuid("ehr_case_id"),
-                name = reader.GetString("name"),
-                cuid = reader.GetString("cuid"),
-                link = reader.IsNull("cuid") ? string.Empty : reader.GetString("cuid"),
-                atid = reader.GetString("atid"),
-                meaning = reader.IsNull("meaning") ? string.Empty : reader.GetString("meaning"),
-                composer = reader.GetString("composer"),
-                state = reader.GetString("state"),
-                ehr_id = reader.GetGuid("ehr_id"),
-                tags = JsonConvert.DeserializeObject<OpenEhrTagsContainer>(reader.GetString("tags")),
-                vo_id = reader.GetGuid("vo_id"),
-                template_id = reader.GetString("template_id")
+                StartTime = reader.GetDateTime("start_time"),
+                EhrCaseId = reader.GetGuid("ehr_case_id"),
+                Name = reader.GetString("name"),
+                Cuid = reader.GetString("cuid"),
+                Link = reader.IsNull("cuid") ? string.Empty : reader.GetString("cuid"),
+                Atid = reader.GetString("atid"),
+                Meaning = reader.IsNull("meaning") ? string.Empty : reader.GetString("meaning"),
+                Composer = reader.GetString("composer"),
+                State = reader.GetString("state"),
+                EhrId = reader.GetGuid("ehr_id"),
+                Tags = JsonConvert.DeserializeObject<OpenEhrTagsContainer>(reader.GetString("tags")),
+                VoId = reader.GetGuid("vo_id"),
+                TemplateId = reader.GetString("template_id")
             });
-
-        return result.OrderByDescending(x => x.start_time).ThenBy(x => x.cuid).ToArray();
+        return result.OrderByDescending(x => x.StartTime).ThenBy(x => x.Cuid).ToArray();
     }
 
     /// <summary>
@@ -583,7 +471,7 @@ public class EhrConnection
     /// <returns></returns>
     public async Task<OpenEhrDocumetModel[]> GetCompleteCompositions(Guid ehrId)
     {
-        var result = new List<OpenEhrDocumetModel>();
+        List<OpenEhrDocumetModel> result = new List<OpenEhrDocumetModel>();
         const string query = @"SELECT c/context/start_time/value as start_time
                           , c/context/other_context[at0001]/items[openEHR-EHR-CLUSTER.composition_context_details*]/items[at0035]/value/id as ehr_case_id
                           , c/name/value as name
@@ -603,28 +491,27 @@ public class EhrConnection
                         WHERE e/ehr_id/value = :ehr_id
                         AND vo/trunk_lifecycle_state/value = 'complete'
                         LIMIT 10000";
-        var com = new AqlCommand(query, this);
+        AqlCommand com = new AqlCommand(query, this);
         com.Parameters.AddWithValue("ehr_id", ehrId);
-        var reader = await com.ExecuteReaderAsync();
+        AQLDataReader reader = await com.ExecuteReaderAsync();
         while (await reader.ReadAsync())
             result.Add(new OpenEhrDocumetModel
             {
-                start_time = reader.GetDateTime("start_time"),
-                ehr_case_id = reader.GetGuid("ehr_case_id"),
-                name = reader.GetString("name"),
-                cuid = reader.GetString("cuid"),
-                link = reader.IsNull("cuid") ? string.Empty : reader.GetString("cuid"),
-                atid = reader.GetString("atid"),
-                meaning = reader.IsNull("meaning") ? string.Empty : reader.GetString("meaning"),
-                composer = reader.GetString("composer"),
-                state = reader.GetString("state"),
-                ehr_id = reader.GetGuid("ehr_id"),
-                tags = JsonConvert.DeserializeObject<OpenEhrTagsContainer>(reader.GetString("tags")),
-                vo_id = reader.GetGuid("vo_id"),
-                template_id = reader.GetString("template_id")
+                StartTime = reader.GetDateTime("start_time"),
+                EhrCaseId = reader.GetGuid("ehr_case_id"),
+                Name = reader.GetString("name"),
+                Cuid = reader.GetString("cuid"),
+                Link = reader.IsNull("cuid") ? string.Empty : reader.GetString("cuid"),
+                Atid = reader.GetString("atid"),
+                Meaning = reader.IsNull("meaning") ? string.Empty : reader.GetString("meaning"),
+                Composer = reader.GetString("composer"),
+                State = reader.GetString("state"),
+                EhrId = reader.GetGuid("ehr_id"),
+                Tags = JsonConvert.DeserializeObject<OpenEhrTagsContainer>(reader.GetString("tags")),
+                VoId = reader.GetGuid("vo_id"),
+                TemplateId = reader.GetString("template_id")
             });
-
-        return result.OrderByDescending(x => x.start_time).ThenBy(x => x.cuid).ToArray();
+        return result.OrderByDescending(x => x.StartTime).ThenBy(x => x.Cuid).ToArray();
     }
 
     /// <summary>
@@ -634,7 +521,7 @@ public class EhrConnection
     /// <returns></returns>
     public async Task<OpenEhrDocumetModel[]> GetCompleteCompositionsByEhrCaseId(Guid ehrCaseId)
     {
-        var result = new List<OpenEhrDocumetModel>();
+        List<OpenEhrDocumetModel> result = new List<OpenEhrDocumetModel>();
         const string query = @"SELECT c/context/start_time/value as start_time
                           , c/context/other_context[at0001]/items[openEHR-EHR-CLUSTER.composition_context_details*]/items[at0035]/value/id as ehr_case_id
                           , c/name/value as name
@@ -648,27 +535,96 @@ public class EhrConnection
                         WHERE c/context/other_context[at0001]/items[openEHR-EHR-CLUSTER.composition_context_details*]/items[at0035]/value/id = :ehr_case_id
                         AND vo/trunk_lifecycle_state/value = 'complete'
                         LIMIT 10000";
-        var com = new AqlCommand(query, this);
+        AqlCommand com = new AqlCommand(query, this);
         com.Parameters.AddWithValue("ehr_case_id", ehrCaseId);
-        var reader = await com.ExecuteReaderAsync();
+        AQLDataReader reader = await com.ExecuteReaderAsync();
         while (await reader.ReadAsync())
             result.Add(new OpenEhrDocumetModel
             {
-                start_time = reader.GetDateTime("start_time"),
-                ehr_case_id = reader.GetGuid("ehr_case_id"),
-                name = reader.GetString("name"),
-                cuid = reader.GetString("cuid"),
-                ehr_id = reader.GetGuid("ehr_id"),
-                vo_id = reader.GetGuid("vo_id"),
-                template_id = reader.GetString("template_id")
+                StartTime = reader.GetDateTime("start_time"),
+                EhrCaseId = reader.GetGuid("ehr_case_id"),
+                Name = reader.GetString("name"),
+                Cuid = reader.GetString("cuid"),
+                EhrId = reader.GetGuid("ehr_id"),
+                VoId = reader.GetGuid("vo_id"),
+                TemplateId = reader.GetString("template_id")
             });
-
-        return result.OrderByDescending(x => x.start_time).ThenBy(x => x.cuid).ToArray();
+        return result.OrderByDescending(x => x.StartTime).ThenBy(x => x.Cuid).ToArray();
+    }
+    
+    public async Task<OpenEhrDocumetModel[]> GetCompositionsByEhrCaseId(Guid ehrCaseId)
+    {
+        List<OpenEhrDocumetModel> result = new List<OpenEhrDocumetModel>();
+        const string query = @"SELECT c/context/start_time/value as start_time
+                          , c/context/other_context[at0001]/items[openEHR-EHR-CLUSTER.composition_context_details*]/items[at0035]/value/id as ehr_case_id
+                          , c/name/value as name
+                          , c/uid/value as cuid
+                          , e/ehr_id/value as ehr_id
+                          , vo/uid/value as vo_id
+                          , c/archetype_details/template_id/value as template_id
+                          , c/links/target/value as link
+                        FROM EHR e
+                        CONTAINS VERSIONED_OBJECT vo
+                        CONTAINS COMPOSITION c 
+                        WHERE c/context/other_context[at0001]/items[openEHR-EHR-CLUSTER.composition_context_details*]/items[at0035]/value/id = :ehr_case_id
+                        LIMIT 10000";
+        AqlCommand com = new AqlCommand(query, this);
+        com.Parameters.AddWithValue("ehr_case_id", ehrCaseId);
+        AQLDataReader reader = await com.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            result.Add(new OpenEhrDocumetModel
+            {
+                StartTime = reader.GetDateTime("start_time"),
+                EhrCaseId = reader.GetGuid("ehr_case_id"),
+                Name = reader.GetString("name"),
+                Cuid = reader.GetString("cuid"),
+                EhrId = reader.GetGuid("ehr_id"),
+                VoId = reader.GetGuid("vo_id"),
+                TemplateId = reader.GetString("template_id"),
+                Link = reader.GetString("link"),
+            });
+        return result.OrderByDescending(x => x.StartTime).ThenBy(x => x.Cuid).ToArray();
+    }
+    
+    public async Task<OpenEhrDocumetModel[]> GetCompositionsByEhrCaseId(Guid ehrCaseId, string[] templateId)
+    {
+        List<OpenEhrDocumetModel> result = new List<OpenEhrDocumetModel>();
+        const string query = @"SELECT c/context/start_time/value as start_time
+                          , c/context/other_context[at0001]/items[openEHR-EHR-CLUSTER.composition_context_details*]/items[at0035]/value/id as ehr_case_id
+                          , c/name/value as name
+                          , c/uid/value as cuid
+                          , e/ehr_id/value as ehr_id
+                          , vo/uid/value as vo_id
+                          , c/archetype_details/template_id/value as template_id
+                          , c/links/target/value as link
+                        FROM EHR e
+                        CONTAINS VERSIONED_OBJECT vo
+                        CONTAINS COMPOSITION c 
+                        WHERE c/context/other_context[at0001]/items[openEHR-EHR-CLUSTER.composition_context_details*]/items[at0035]/value/id = :ehr_case_id
+                        AND c/archetype_details/template_id/value MATCHES {:template_id}
+                        LIMIT 10000";
+        AqlCommand com = new AqlCommand(query, this);
+        com.Parameters.AddWithValue("ehr_case_id", ehrCaseId);
+        com.Parameters.AddWithValue("template_id", templateId);
+        AQLDataReader reader = await com.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            result.Add(new OpenEhrDocumetModel
+            {
+                StartTime = reader.GetDateTime("start_time"),
+                EhrCaseId = reader.GetGuid("ehr_case_id"),
+                Name = reader.GetString("name"),
+                Cuid = reader.GetString("cuid"),
+                EhrId = reader.GetGuid("ehr_id"),
+                VoId = reader.GetGuid("vo_id"),
+                TemplateId = reader.GetString("template_id"),
+                Link = reader.GetString("link"),
+            });
+        return result.OrderByDescending(x => x.StartTime).ThenBy(x => x.Cuid).ToArray();
     }
 
     public async Task<OpenEhrDocumetModel[]> GetCompositionsByName(string name, DateTime dtBeg, DateTime dtEnd)
     {
-        var result = new List<OpenEhrDocumetModel>();
+        List<OpenEhrDocumetModel> result = new List<OpenEhrDocumetModel>();
         const string query = @"SELECT c/context/start_time/value as start_time
                           , c/context/other_context[at0001]/items[openEHR-EHR-CLUSTER.composition_context_details*]/items[at0035]/value/id as ehr_case_id
                           , c/name/value as name
@@ -683,29 +639,28 @@ public class EhrConnection
                         AND c/context/start_time/value >= :dt_beg
                         AND c/context/start_time/value <= :dt_end               
                         LIMIT 10000";
-        var com = new AqlCommand(query, this);
+        AqlCommand com = new AqlCommand(query, this);
         com.Parameters.AddWithValue("name", name);
         com.Parameters.AddWithValue("dt_beg", dtBeg);
         com.Parameters.AddWithValue("dt_end", dtEnd);
-        var reader = await com.ExecuteReaderAsync();
+        AQLDataReader reader = await com.ExecuteReaderAsync();
         while (await reader.ReadAsync())
             result.Add(new OpenEhrDocumetModel
             {
-                start_time = reader.GetDateTime("start_time"),
-                ehr_case_id = reader.GetGuid("ehr_case_id"),
-                name = reader.GetString("name"),
-                cuid = reader.GetString("cuid"),
-                ehr_id = reader.GetGuid("ehr_id"),
-                vo_id = reader.GetGuid("vo_id"),
-                template_id = reader.GetString("template_id")
+                StartTime = reader.GetDateTime("start_time"),
+                EhrCaseId = reader.GetGuid("ehr_case_id"),
+                Name = reader.GetString("name"),
+                Cuid = reader.GetString("cuid"),
+                EhrId = reader.GetGuid("ehr_id"),
+                VoId = reader.GetGuid("vo_id"),
+                TemplateId = reader.GetString("template_id")
             });
-
-        return result.OrderByDescending(x => x.start_time).ThenBy(x => x.cuid).ToArray();
+        return result.OrderByDescending(x => x.StartTime).ThenBy(x => x.Cuid).ToArray();
     }
 
     public async Task<OpenEhrDocumetModel[]> GetCompositionsByPeriod(DateTime dtBeg, DateTime dtEnd)
     {
-        var result = new List<OpenEhrDocumetModel>();
+        List<OpenEhrDocumetModel> result = new List<OpenEhrDocumetModel>();
         const string query = @"SELECT c/context/start_time/value as start_time
                           , c/context/other_context[at0001]/items[openEHR-EHR-CLUSTER.composition_context_details*]/items[at0035]/value/id as ehr_case_id
                           , c/name/value as name
@@ -719,23 +674,22 @@ public class EhrConnection
                         WHERE c/context/start_time/value >= :dt_beg
                         AND c/context/start_time/value <= :dt_end               
                         LIMIT 10000";
-        var com = new AqlCommand(query, this);
+        AqlCommand com = new AqlCommand(query, this);
         com.Parameters.AddWithValue("dt_beg", dtBeg);
         com.Parameters.AddWithValue("dt_end", dtEnd);
-        var reader = await com.ExecuteReaderAsync();
+        AQLDataReader reader = await com.ExecuteReaderAsync();
         while (await reader.ReadAsync())
             result.Add(new OpenEhrDocumetModel
             {
-                start_time = reader.GetDateTime("start_time"),
-                ehr_case_id = reader.GetGuid("ehr_case_id"),
-                name = reader.GetString("name"),
-                cuid = reader.GetString("cuid"),
-                ehr_id = reader.GetGuid("ehr_id"),
-                vo_id = reader.GetGuid("vo_id"),
-                template_id = reader.GetString("template_id")
+                StartTime = reader.GetDateTime("start_time"),
+                EhrCaseId = reader.GetGuid("ehr_case_id"),
+                Name = reader.GetString("name"),
+                Cuid = reader.GetString("cuid"),
+                EhrId = reader.GetGuid("ehr_id"),
+                VoId = reader.GetGuid("vo_id"),
+                TemplateId = reader.GetString("template_id")
             });
-
-        return result.OrderByDescending(x => x.start_time).ThenBy(x => x.cuid).ToArray();
+        return result.OrderByDescending(x => x.StartTime).ThenBy(x => x.Cuid).ToArray();
     }
 
     /// <summary>
@@ -745,7 +699,7 @@ public class EhrConnection
     /// <returns></returns>
     public async Task<OpenEhrDocumetModel[]> GetCompositionsAllVersions(Guid ehrId)
     {
-        var result = new List<OpenEhrDocumetModel>();
+        List<OpenEhrDocumetModel> result = new List<OpenEhrDocumetModel>();
         const string query = @"SELECT c/context/start_time/value as start_time
                           , c/context/other_context[at0001]/items[openEHR-EHR-CLUSTER.composition_context_details*]/items[at0035]/value/id as ehr_case_id
                           , c/name/value as name
@@ -765,28 +719,27 @@ public class EhrConnection
                         CONTAINS COMPOSITION c 
                         WHERE e/ehr_id/value = :ehr_id
                         LIMIT 10000";
-        var com = new AqlCommand(query, this);
+        AqlCommand com = new AqlCommand(query, this);
         com.Parameters.AddWithValue("ehr_id", ehrId);
-        var reader = await com.ExecuteReaderAsync();
+        AQLDataReader reader = await com.ExecuteReaderAsync();
         while (await reader.ReadAsync())
             result.Add(new OpenEhrDocumetModel
             {
-                start_time = reader.GetDateTime("start_time"),
-                ehr_case_id = reader.GetGuid("ehr_case_id"),
-                name = reader.GetString("name"),
-                cuid = reader.GetString("cuid"),
-                link = reader.IsNull("cuid") ? string.Empty : reader.GetString("cuid"),
-                atid = reader.GetString("atid"),
-                meaning = reader.IsNull("meaning") ? string.Empty : reader.GetString("meaning"),
-                composer = reader.GetString("composer"),
-                state = reader.GetString("state"),
-                ehr_id = reader.GetGuid("ehr_id"),
-                tags = JsonConvert.DeserializeObject<OpenEhrTagsContainer>(reader.GetString("tags")),
-                vo_id = reader.GetGuid("vo_id"),
-                template_id = reader.GetString("template_id")
+                StartTime = reader.GetDateTime("start_time"),
+                EhrCaseId = reader.GetGuid("ehr_case_id"),
+                Name = reader.GetString("name"),
+                Cuid = reader.GetString("cuid"),
+                Link = reader.IsNull("cuid") ? string.Empty : reader.GetString("cuid"),
+                Atid = reader.GetString("atid"),
+                Meaning = reader.IsNull("meaning") ? string.Empty : reader.GetString("meaning"),
+                Composer = reader.GetString("composer"),
+                State = reader.GetString("state"),
+                EhrId = reader.GetGuid("ehr_id"),
+                Tags = JsonConvert.DeserializeObject<OpenEhrTagsContainer>(reader.GetString("tags")),
+                VoId = reader.GetGuid("vo_id"),
+                TemplateId = reader.GetString("template_id")
             });
-
-        return result.OrderByDescending(x => x.start_time).ThenBy(x => x.cuid).ToArray();
+        return result.OrderByDescending(x => x.StartTime).ThenBy(x => x.Cuid).ToArray();
     }
 
     /// <summary>
@@ -799,12 +752,12 @@ public class EhrConnection
     {
         try
         {
-            var requestMessage = new HttpRequestMessage(HttpMethod.Get, $"{Url}tagging/{compositionUid}");
+            HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod.Get, $"{Url}tagging/{compositionUid}");
             requestMessage.Headers.TryAddWithoutValidation("Authorization", GetCredentials());
-            var response = Client.Send(requestMessage);
+            HttpResponseMessage response = Client.Send(requestMessage);
             response.EnsureSuccessStatusCode();
-            var jsonResponse = response.Content.ReadAsStringAsync().Result;
-            EhrConnectionLogger.LogDebug("{compositionUid} tags\r\n{jsonResponse}", compositionUid, jsonResponse);
+            string jsonResponse = response.Content.ReadAsStringAsync().Result;
+            Log.Logger.Debug("{compositionUid} tags\r\n{jsonResponse}", compositionUid, jsonResponse);
             return JsonConvert.DeserializeObject<OpenEhrTagsContainer>(jsonResponse);
         }
         catch (Exception ex)
@@ -823,11 +776,11 @@ public class EhrConnection
     {
         try
         {
-            var requestMessage = new HttpRequestMessage(HttpMethod.Get, $"{Url}tagging/{compositionUid}");
+            HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod.Get, $"{Url}tagging/{compositionUid}");
             requestMessage.Headers.TryAddWithoutValidation("Authorization", GetCredentials());
-            var response = await Client.SendAsync(requestMessage);
+            HttpResponseMessage response = await Client.SendAsync(requestMessage);
             response.EnsureSuccessStatusCode();
-            var jsonResponse = await response.Content.ReadAsStringAsync();
+            string jsonResponse = await response.Content.ReadAsStringAsync();
             return JsonConvert.DeserializeObject<OpenEhrTagsContainer>(jsonResponse);
         }
         catch (Exception ex)
@@ -845,8 +798,8 @@ public class EhrConnection
     /// <returns></returns>
     public async Task<OpenEhrDocumetModel[]> GetCompositionsAllVersions(Guid ehrId, DateTime dtBeg, DateTime dtEnd)
     {
-        var result = new List<OpenEhrDocumetModel>();
-        foreach (var day in EMIAS.DateTimeExtensions.Extensions.EachDay(dtBeg, dtEnd))
+        List<OpenEhrDocumetModel> result = new List<OpenEhrDocumetModel>();
+        foreach (DateTime day in EMIAS.DateTimeExtensions.Extensions.EachDay(dtBeg, dtEnd))
         {
             const string query = @"SELECT c/context/start_time/value as start_time
                           , c/context/other_context[at0001]/items[openEHR-EHR-CLUSTER.composition_context_details*]/items[at0035]/value/id as ehr_case_id
@@ -869,31 +822,30 @@ public class EhrConnection
                         AND c/context/start_time/value >= :dt_beg
                         AND c/context/start_time/value <= :dt_end
                         LIMIT 10000";
-            var com = new AqlCommand(query, this);
+            AqlCommand com = new AqlCommand(query, this);
             com.Parameters.AddWithValue("ehr_id", ehrId);
             com.Parameters.AddWithValue("dt_beg", day);
             com.Parameters.AddWithValue("dt_end", day.EndOfDay());
-            var reader = await com.ExecuteReaderAsync();
+            AQLDataReader reader = await com.ExecuteReaderAsync();
             while (await reader.ReadAsync())
                 result.Add(new OpenEhrDocumetModel
                 {
-                    start_time = reader.GetDateTime("start_time"),
-                    ehr_case_id = reader.GetGuid("ehr_case_id"),
-                    name = reader.GetString("name"),
-                    cuid = reader.GetString("cuid"),
-                    link = reader.IsNull("cuid") ? string.Empty : reader.GetString("cuid"),
-                    atid = reader.GetString("atid"),
-                    meaning = reader.IsNull("meaning") ? string.Empty : reader.GetString("meaning"),
-                    composer = reader.GetString("composer"),
-                    state = reader.GetString("state"),
-                    ehr_id = reader.GetGuid("ehr_id"),
-                    tags = JsonConvert.DeserializeObject<OpenEhrTagsContainer>(reader.GetString("tags")),
-                    vo_id = reader.GetGuid("vo_id"),
-                    template_id = reader.GetString("template_id")
+                    StartTime = reader.GetDateTime("start_time"),
+                    EhrCaseId = reader.GetGuid("ehr_case_id"),
+                    Name = reader.GetString("name"),
+                    Cuid = reader.GetString("cuid"),
+                    Link = reader.IsNull("cuid") ? string.Empty : reader.GetString("cuid"),
+                    Atid = reader.GetString("atid"),
+                    Meaning = reader.IsNull("meaning") ? string.Empty : reader.GetString("meaning"),
+                    Composer = reader.GetString("composer"),
+                    State = reader.GetString("state"),
+                    EhrId = reader.GetGuid("ehr_id"),
+                    Tags = JsonConvert.DeserializeObject<OpenEhrTagsContainer>(reader.GetString("tags")),
+                    VoId = reader.GetGuid("vo_id"),
+                    TemplateId = reader.GetString("template_id")
                 });
         }
-
-        return result.OrderByDescending(x => x.start_time).ThenBy(x => x.cuid).ToArray();
+        return result.OrderByDescending(x => x.StartTime).ThenBy(x => x.Cuid).ToArray();
     }
 
     /// <summary>
@@ -905,9 +857,9 @@ public class EhrConnection
     {
         try
         {
-            var requestMessage = new HttpRequestMessage(HttpMethod.Post, $"{Url}ehr/{ehrId}/reindex");
+            HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod.Post, $"{Url}ehr/{ehrId}/reindex");
             requestMessage.Headers.TryAddWithoutValidation("Authorization", GetCredentials());
-            var response = await Client.SendAsync(requestMessage);
+            HttpResponseMessage response = await Client.SendAsync(requestMessage);
             response.EnsureSuccessStatusCode();
         }
         catch (Exception ex)
@@ -924,34 +876,182 @@ public class EhrConnection
     public async Task RepairCase(Guid ehrId)
     {
         await Reindex(ehrId);
-        var compositions = await GetCompositions(ehrId);
-        foreach (var composition in compositions)
+        OpenEhrDocumetModel[] compositions = await GetCompositions(ehrId);
+        foreach (OpenEhrDocumetModel composition in compositions)
         {
-            await DeleteComposition(composition.vo_id);
-            await RestoreComposition(composition.vo_id);
+            await DeleteComposition(composition.VoId);
+            await RestoreComposition(composition.VoId);
         }
     }
 
+    /// <summary>
+    /// Adds tags to a specific composition identified by its unique identifier.
+    /// </summary>
+    /// <param name="cuid">The unique identifier of the composition to be tagged.</param>
+    /// <param name="tags">Container holding the tags to be added to the composition.</param>
+    /// <returns>A task that represents the asynchronous operation of tagging a composition.</returns>
     public async Task Tag(string cuid, OpenEhrTagsContainer tags)
     {
-        var preparedTags = new Tagging(cuid, tags.tags);
-        var serializedTags = JsonConvert.SerializeObject(preparedTags, Formatting.Indented, new JsonSerializerSettings
-        {
-            NullValueHandling = NullValueHandling.Ignore
-        });
-
+        Tagging preparedTags = new Tagging(cuid, tags.Tags);
+        string serializedTags = JsonConvert.SerializeObject(preparedTags, Formatting.Indented, new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
         try
         {
-            var content = new StringContent(serializedTags, null, "application/json");
-            var requestMessage = new HttpRequestMessage(HttpMethod.Post, $"{Url}tagging");
+            StringContent content = new StringContent(serializedTags, null, "application/json");
+            HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod.Post, $"{Url}tagging");
             requestMessage.Headers.TryAddWithoutValidation("Authorization", GetCredentials());
             requestMessage.Content = content;
-            var response = await Client.SendAsync(requestMessage);
+            HttpResponseMessage response = await Client.SendAsync(requestMessage);
             response.EnsureSuccessStatusCode();
         }
         catch (Exception ex)
         {
             throw new Exception($"Failed to tag {cuid}: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Determines if a composition exists within the EHR system based on the specified EHR case ID and template ID.
+    /// </summary>
+    /// <param name="ehrCaseId">The unique identifier of the EHR case.</param>
+    /// <param name="templateId">The unique identifier of the composition template.</param>
+    /// <returns>A task that represents the asynchronous operation. The task result is a boolean value indicating whether
+    /// the composition exists (true) or not (false).</returns>
+    public async Task<bool> HasComposition(Guid ehrCaseId, string templateId)
+    {
+        const string query = "SELECT c/uid/value as uid FROM EHR e CONTAINS COMPOSITION c WHERE c/archetype_details/template_id/value = :template_id AND c/context/other_context[at0001]/items[openEHR-EHR-CLUSTER.composition_context_details*]/items[at0035]/value/id = :ehr_case_id LIMIT 1";
+        AqlCommand com = new AqlCommand(query, this);
+        com.Parameters.AddWithValue("ehr_case_id", ehrCaseId);
+        com.Parameters.AddWithValue("template_id", templateId);
+        AQLDataReader reader = await com.ExecuteReaderAsync();
+        return await reader.ReadAsync();
+    }
+
+    /// <summary>
+    /// Gets server version info from api/rest/v1/system/version
+    /// </summary>
+    /// <returns></returns>
+    public async Task<Dto.EhrPlatformVersion> Version()
+    {
+        try
+        {
+            HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod.Get, $"{Url}system/version");
+            requestMessage.Headers.TryAddWithoutValidation("Authorization", GetCredentials());
+            HttpResponseMessage response = await Client.SendAsync(requestMessage);
+            response.EnsureSuccessStatusCode();
+            string json = await response.Content.ReadAsStringAsync();
+            Dto.EhrPlatformVersion? result = JsonConvert.DeserializeObject<Dto.EhrPlatformVersion>(json);
+            if (result == null)
+                throw new Exception("Empty response");
+            return result;
+        }
+        catch (Exception ex)
+        {
+            throw new Exception($"Failed to get server version: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Posts a contribution payload to api/rest/v1/composition/contribution and returns CommitData
+    /// </summary>
+    /// <param name="content">Raw JSON payload string</param>
+    /// <returns>CommitData of the performed action</returns>
+    public async Task<ContributionResponse> PostContribution(string content)
+    {
+        try
+        {
+            HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod.Post, $"{Url}composition/contribution");
+            requestMessage.Headers.TryAddWithoutValidation("Authorization", GetCredentials());
+            requestMessage.Content = new StringContent(content, Encoding.UTF8, "application/json");
+            HttpResponseMessage response = await Client.SendAsync(requestMessage);
+            Log.Logger.Debug("Post contribution response: {@Response}", new { response.StatusCode, Body = await response.Content.ReadAsStringAsync() });
+            response.EnsureSuccessStatusCode();
+            string json = await response.Content.ReadAsStringAsync();
+            ContributionResponse? result = JsonConvert.DeserializeObject<ContributionResponse>(json);
+            if (result?.CommitData == null || result.CommitData.Length == 0)
+                throw new Exception("Empty response");
+            return result;
+        }
+        catch (Exception ex)
+        {
+            throw new Exception($"Failed to post contribution: {ex.Message}");
+        }
+    }
+    
+    /// <summary>
+    ///     Gets composition body by EHR case ID and template ID in FLAT format
+    /// </summary>
+    /// <param name="ehrCaseId"></param>
+    /// <param name="templateId"></param>
+    /// <returns></returns>
+    public async Task<string?> GetCompositionBodyByEhrCaseId(Guid ehrCaseId, string templateId)
+    {
+        const string query = "SELECT c/uid/value as cuid FROM EHR e CONTAINS COMPOSITION c WHERE c/archetype_details/template_id/value = :template_id AND c/context/other_context[at0001]/items[openEHR-EHR-CLUSTER.composition_context_details*]/items[at0035]/value/id = :ehr_case_id LIMIT 1";
+        AqlCommand com = new AqlCommand(query, this);
+        com.Parameters.AddWithValue("ehr_case_id", ehrCaseId);
+        com.Parameters.AddWithValue("template_id", templateId);
+        AQLDataReader reader = await com.ExecuteReaderAsync();
+    
+        if (!await reader.ReadAsync())
+        {
+            Log.Logger.Information("Состав не найден для ehrCaseId={EhrCaseId} и templateId={TemplateId}", ehrCaseId, templateId);
+            return null;
+        }
+    
+        string compUid = reader.GetString("cuid");
+    
+        try
+        {
+            HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod.Get, $"{Url}composition/{Uri.EscapeDataString(compUid)}?format=FLAT&meta=true");
+            requestMessage.Headers.TryAddWithoutValidation("Authorization", GetCredentials());
+            HttpResponseMessage response = await Client.SendAsync(requestMessage);
+            string responseBody = await response.Content.ReadAsStringAsync();
+        
+            if (!response.IsSuccessStatusCode)
+            {
+                Log.Logger.Warning("Ошибка получения состава из EHR: {Status} {Body}", response.StatusCode, responseBody);
+                return null;
+            }
+        
+            return responseBody;
+        }
+        catch (Exception ex)
+        {
+            Log.Logger.Error(ex, "Ошибка получения состава из EHR: {Message}", ex.Message);
+            return null;
+        }
+    }
+
+    public async Task<OpenEhrDocumetModel[]> GetCompositionChildren(Guid compositionId)
+    {
+        List<OpenEhrDocumetModel> result = new List<OpenEhrDocumetModel>();
+        const string query = @"SELECT c/context/start_time/value as start_time
+                          , c/context/other_context[at0001]/items[openEHR-EHR-CLUSTER.composition_context_details*]/items[at0035]/value/id as ehr_case_id
+                          , c/name/value as name
+                          , c/uid/value as cuid
+                          , e/ehr_id/value as ehr_id
+                          , vo/uid/value as vo_id
+                          , c/archetype_details/template_id/value as template_id
+                          , c/links/target/value as link
+                        FROM EHR e
+                        CONTAINS VERSIONED_OBJECT vo
+                        CONTAINS COMPOSITION c 
+                        WHERE c/links/target/value = :composition_id
+                        LIMIT 10000";
+        AqlCommand com = new AqlCommand(query, this);
+        com.Parameters.AddWithValue("compositionId", $"ehr:compositions/{compositionId.ToString()}");
+        AQLDataReader reader = await com.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            result.Add(new OpenEhrDocumetModel
+            {
+                StartTime = reader.GetDateTime("start_time"),
+                EhrCaseId = reader.GetGuid("ehr_case_id"),
+                Name = reader.GetString("name"),
+                Cuid = reader.GetString("cuid"),
+                EhrId = reader.GetGuid("ehr_id"),
+                VoId = reader.GetGuid("vo_id"),
+                TemplateId = reader.GetString("template_id"),
+                Link = reader.GetString("link"),
+            });
+        return result.OrderByDescending(x => x.StartTime).ThenBy(x => x.Cuid).ToArray();
     }
 }

@@ -1,16 +1,13 @@
 ﻿using System.Net;
 using EMIAS.DateTimeExtensions;
-using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace OpenEhr;
 
 public class AQLDataReader
 {
-    private ILogger<EhrConnection> _ehrConnectionLogger;
 
-    public AQLDataReader(IEnumerable<JObject> resultSet, HttpStatusCode? httpStatusCode, string? content, ref ILogger<EhrConnection> ehrConnectionLogger)
+    public AQLDataReader(IEnumerable<JObject> resultSet, HttpStatusCode? httpStatusCode, string? content)
     {
         m_ResultSet = resultSet.ToList();
         m_ResultSetLength = m_ResultSet.Count();
@@ -19,7 +16,6 @@ public class AQLDataReader
 
         HttpStatusCode = httpStatusCode;
         Content = content;
-        this._ehrConnectionLogger = ehrConnectionLogger;
     }
 
     public int FieldCount { get; set; }
@@ -97,61 +93,6 @@ public class AQLDataReader
 
     public T GetAs<T>()
     {
-        return Extensions.ApplyConversion<T>(m_CurrentRowResult, ref _ehrConnectionLogger);
+        return Extensions.ApplyConversion<T>(m_CurrentRowResult);
     }
-    
-    // public T GetAs<T>()
-    // {
-    //     var properties = m_CurrentRowResult.Properties();
-    //     // Check and update properties that end with `_str` or `_string`
-    //     foreach (var property in properties.Where(p => p.Name.EndsWith("_str") || p.Name.EndsWith("_string")))
-    //     {
-    //         _ehrConnectionLogger.LogDebug("Found technical parameter {ParamName} with value '{ParamValue}'", property.Name, m_CurrentRowResult[property.Name]?.ToString(Formatting.None));
-    //         m_CurrentRowResult[property.Name] = m_CurrentRowResult[property.Name]?.ToString(Formatting.None);
-    //     }
-    //
-    //     var result = m_CurrentRowResult.ToObject<T>();
-    //     if (result == null) throw new InvalidOperationException();
-    //     foreach (var propertyInfo in result.GetType().GetProperties())
-    //     {
-    //         var val = propertyInfo.GetValue(result);
-    //         if (val == null) continue;
-    //         var value = val.ToString();
-    //         if (string.IsNullOrEmpty(value) || value == "''" || value == "null")
-    //             propertyInfo.SetValue(result, null);
-    //         if (val is DateTime time) propertyInfo.SetValue(result, time.SetKindUtc());
-    //     }
-    //
-    //     return result;
-    // }
-
-    // public T GetAs<T>()
-    // {
-    //     var result = JsonConvert.DeserializeObject<T>(m_CurrentRowResult.ToString(),
-    //         new JsonSerializerSettings
-    //         {
-    //             DateParseHandling = DateParseHandling.None // for dates
-    //         });
-    //
-    //     if (result == null) throw new InvalidOperationException();
-    //     foreach (var propertyInfo in result.GetType().GetProperties())
-    //     {
-    //         var val = propertyInfo.GetValue(result);
-    //         switch (val)
-    //         {
-    //             case null:
-    //                 continue;
-    //             case JObject:
-    //             case JToken:
-    //                 propertyInfo.SetValue(result, val.ToString());
-    //                 continue;
-    //         }
-    //
-    //         var value = val.ToString();
-    //         if (string.IsNullOrEmpty(value) || value == "''")
-    //             propertyInfo.SetValue(result, null);
-    //         if (val is DateTime time) propertyInfo.SetValue(result, time.SetKindUtc());
-    //     }
-    //     return result;
-    // }
 }

@@ -1,14 +1,15 @@
 ﻿using System.Net;
 using System.Text;
-using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using OpenEhr.Dto;
+using Serilog;
 
 namespace OpenEhr;
 
 public class AqlCommand
 {
-    public AQLParameterCollection Parameters = new();
+    public AQLParameterCollection Parameters = new AQLParameterCollection();
 
     public AqlCommand(string query, EhrConnection connection)
     {
@@ -16,13 +17,12 @@ public class AqlCommand
         this.Connection = connection;
     }
 
-    public bool Debug { get; set; }
     private string Query { get; set; }
     private EhrConnection Connection { get; }
 
     private void ApplyParametersToQuery()
     {
-        foreach (var parameter in Parameters.InternalList)
+        foreach (AqlParameter parameter in Parameters.InternalList)
             Query = Query.Replace(!parameter.Name.StartsWith(":") ? $":{parameter.Name}" : $"{parameter.Name}", parameter.Value);
     }
 
@@ -40,46 +40,45 @@ public class AqlCommand
 
     public async Task<AQLDataReader> ExecuteReaderAsync()
     {
-        var sendContent = new JObject();
-        Connection.EhrConnectionLogger.LogDebug("ApplyParametersToQuery");
+        JObject sendContent = new JObject();
+        Log.Logger.Debug("ApplyParametersToQuery");
         ApplyParametersToQuery();
         sendContent["aql"] = Query;
         sendContent["aqlParameters"] = new JObject();
-        Connection.EhrConnectionLogger.LogDebug("Content: {content}", sendContent.ToString());
-        var content = new StringContent(sendContent.ToString(), Encoding.UTF8, "application/json");
-        var requestMessage = new HttpRequestMessage(HttpMethod.Post, $"{Connection.Url}query");
+        Log.Logger.Debug("Content: {content}", sendContent.ToString());
+        StringContent content = new StringContent(sendContent.ToString(), Encoding.UTF8, "application/json");
+        HttpRequestMessage? requestMessage = new HttpRequestMessage(HttpMethod.Post, $"{Connection.Url}query");
         requestMessage.Headers.TryAddWithoutValidation("Authorization", Connection.GetCredentials());
         requestMessage.Content = content;
-        Connection.EhrConnectionLogger.LogDebug("requestMessage is null ? {requestMessage}", requestMessage == null);
-        Connection.EhrConnectionLogger.LogDebug("Connection.Client is null ? {ConnectionClient}", Connection.Client == null);
-        Connection.EhrConnectionLogger.LogDebug("Sending requestMessage");
-        var response = await Connection.Client.SendAsync(requestMessage);
-        var responseBody = await response.Content.ReadAsStringAsync();
-        Connection.EhrConnectionLogger.LogDebug("responseBody: {responseBody}", responseBody.ToString());
+        Log.Logger.Debug("requestMessage is null ? {requestMessage}", requestMessage == null);
+        Log.Logger.Debug("Connection.Client is null ? {ConnectionClient}", Connection.Client == null);
+        Log.Logger.Debug("Sending requestMessage");
+        HttpResponseMessage response = await Connection.Client.SendAsync(requestMessage);
+        string responseBody = await response.Content.ReadAsStringAsync();
+        Log.Logger.Debug("responseBody: {responseBody}", responseBody.ToString());
         if (response.StatusCode != HttpStatusCode.OK)
-            return new AQLDataReader(Array.Empty<JObject>(), response.StatusCode, responseBody, ref Connection.EhrConnectionLogger);
-        var aqlResponse = JsonConvert.DeserializeObject<AQLResponse>(responseBody);
-        Connection.EhrConnectionLogger.LogDebug("StatusCode: {StatusCode}", response.StatusCode);
-        Connection.EhrConnectionLogger.LogDebug("aqlResponse is null ? {aqlResponse}", aqlResponse == null);
-        return new AQLDataReader(aqlResponse!.resultSet, response.StatusCode, responseBody, ref Connection.EhrConnectionLogger);
+            return new AQLDataReader(Array.Empty<JObject>(), response.StatusCode, responseBody);
+        AqlResponse? aqlResponse = JsonConvert.DeserializeObject<AqlResponse>(responseBody);
+        Log.Logger.Debug("StatusCode: {StatusCode}", response.StatusCode);
+        Log.Logger.Debug("aqlResponse is null ? {aqlResponse}", aqlResponse == null);
+        return new AQLDataReader(aqlResponse!.ResultSet, response.StatusCode, responseBody);
     }
 
     public async Task<List<JObject>> ExecuteRawQueryAsync()
     {
-        var responseBody = string.Empty;
         ApplyParametersToQuery();
 
-        var resultSet = new List<JObject>();
+        List<JObject> resultSet = new List<JObject>();
         try
         {
-            var requestMessage = new HttpRequestMessage(HttpMethod.Get, $"{Connection.Url}?aql={Uri.EscapeUriString(Query)}");
-            var response = await Connection.Client.SendAsync(requestMessage);
+            HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod.Get, $"{Connection.Url}?aql={Uri.EscapeUriString(Query)}");
+            HttpResponseMessage response = await Connection.Client.SendAsync(requestMessage);
             response.EnsureSuccessStatusCode();
-            responseBody = await response.Content.ReadAsStringAsync();
+            string responseBody = await response.Content.ReadAsStringAsync();
             if (response.StatusCode == HttpStatusCode.OK)
             {
-                var aqlResponse = JsonConvert.DeserializeObject<AQLResponse>(responseBody);
-                foreach (var queryObject in aqlResponse.resultSet) resultSet.Add(queryObject);
+                AqlResponse? aqlResponse = JsonConvert.DeserializeObject<AqlResponse>(responseBody);
+                foreach (JObject queryObject in aqlResponse.ResultSet) resultSet.Add(queryObject);
             }
         }
         catch (Exception ex)
