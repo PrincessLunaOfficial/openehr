@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using EMIAS.DateTimeExtensions;
 using Newtonsoft.Json.Linq;
 
@@ -12,7 +12,7 @@ public class AQLDataReader
         m_ResultSet = resultSet.ToList();
         m_ResultSetLength = m_ResultSet.Count();
         if (m_ResultSetLength > 0)
-            FieldCount = m_ResultSet.Properties().Count();
+            FieldCount = m_ResultSet.First().Properties().Count();
 
         HttpStatusCode = httpStatusCode;
         Content = content;
@@ -47,41 +47,50 @@ public class AQLDataReader
         return await Task.FromResult(false);
     }
 
+    private JToken Required(string propertyName)
+    {
+        JProperty? property = m_CurrentRowProperties?.FirstOrDefault(p => p.Name == propertyName);
+        if (property?.Value == null || property.Value.Type == JTokenType.Null)
+            throw new EhrContractException($"AQL result has no required field: {propertyName}");
+        return property.Value;
+    }
+
     public object GetValue(string propertyName)
     {
-        return m_CurrentRowProperties.FirstOrDefault(p => p.Name == propertyName).Value;
+        return Required(propertyName);
     }
 
     public Guid GetGuid(string propertyName)
     {
-        return (Guid)m_CurrentRowProperties.FirstOrDefault(p => p.Name == propertyName).Value;
+        return Required(propertyName).ToObject<Guid>();
     }
 
     public string GetString(string propertyName)
     {
-        return m_CurrentRowProperties.FirstOrDefault(p => p.Name == propertyName).Value.ToString();
+        return Required(propertyName).ToString();
     }
 
     public DateTime GetDateTime(string propertyName, bool utc = true)
     {
         if (utc)
-            return ((DateTime)m_CurrentRowProperties.FirstOrDefault(p => p.Name == propertyName).Value).SetKindUtc();
-        return (DateTime)m_CurrentRowProperties.FirstOrDefault(p => p.Name == propertyName).Value;
+            return Required(propertyName).ToObject<DateTimeOffset>().UtcDateTime;
+        return Required(propertyName).ToObject<DateTime>();
     }
 
     public double GetDouble(string propertyName)
     {
-        return (double)m_CurrentRowProperties.FirstOrDefault(p => p.Name == propertyName).Value;
+        return Required(propertyName).ToObject<double>();
     }
 
     public double GetInt32(string propertyName)
     {
-        return (int)m_CurrentRowProperties.FirstOrDefault(p => p.Name == propertyName).Value;
+        return Required(propertyName).ToObject<int>();
     }
 
     public bool IsNull(string propertyName)
     {
         return m_CurrentRowProperties.All(p => p.Name != propertyName) ||
+               m_CurrentRowProperties.First(p => p.Name == propertyName).Value.Type == JTokenType.Null ||
                string.IsNullOrEmpty(m_CurrentRowProperties.First(p => p.Name == propertyName).Value.ToString()) ||
                m_CurrentRowProperties.First(p => p.Name == propertyName).Value.ToString() == "''";
     }

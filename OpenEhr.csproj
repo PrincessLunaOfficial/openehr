@@ -1,19 +1,28 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <TargetFramework>net9.0</TargetFramework>
+        <TargetFramework>net10.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
-        <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-        <Version>3.0.8</Version>
-        <LangVersion>13</LangVersion>
+        <GeneratePackageOnBuild>False</GeneratePackageOnBuild>
+        <Version>4.1.0-preview.3</Version>
+        <LangVersion>14</LangVersion>
+        <PackageId>OpenEhr</PackageId>
+        <Authors>PrincessLunaOfficial</Authors>
+        <Description>EHR HTTP and AQL client for .NET</Description>
+        <RepositoryUrl>https://github.com/PrincessLunaOfficial/openehr</RepositoryUrl>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
     </PropertyGroup>
 
     <ItemGroup>
         <PackageReference Include="EMIAS.DateTimeExtensions" Version="1.1.0" />
-        <PackageReference Include="Newtonsoft.Json" Version="13.0.3"/>
+        <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
         <PackageReference Include="Serilog" Version="4.3.0" />
-        <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
+        <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
     </ItemGroup>
 
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
 </Project>

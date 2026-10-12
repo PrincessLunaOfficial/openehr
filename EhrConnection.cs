@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using EMIAS.DateTimeExtensions;
@@ -11,29 +11,29 @@ using Serilog;
 namespace OpenEhr;
 
 /// <summary>
-/// 
+///
 /// </summary>
 public readonly struct EhrDbResponse
 {
     /// <summary>
-    /// 
+    ///
     /// </summary>
     public string? EntityName { get; init; }
     /// <summary>
-    /// 
+    ///
     /// </summary>
     public HttpStatusCode? Code { get; init; }
     /// <summary>
-    /// 
+    ///
     /// </summary>
     public EhrDbOperationType OperationType { get; init; }
     /// <summary>
-    /// 
+    ///
     /// </summary>
     public string? Message { get; init; }
 
     /// <summary>
-    /// 
+    ///
     /// </summary>
     /// <returns></returns>
     public string GetMessage()
@@ -47,43 +47,43 @@ public readonly struct EhrDbResponse
 }
 
 /// <summary>
-/// 
+///
 /// </summary>
 public enum EhrDbOperationType
 {
     /// <summary>
-    /// 
+    ///
     /// </summary>
     Create,
     /// <summary>
-    /// 
+    ///
     /// </summary>
     Update,
     /// <summary>
-    /// 
+    ///
     /// </summary>
     SetStatus
 }
 
 /// <summary>
-/// 
+///
 /// </summary>
 public enum EhrDbTriggerStatus
 {
     /// <summary>
-    /// 
+    ///
     /// </summary>
     ACTIVE,
     /// <summary>
-    /// 
+    ///
     /// </summary>
     DEACTIVATED
 }
 
 /// <summary>
-/// 
+///
 /// </summary>
-public class EhrConnection
+public class EhrConnection : IDisposable
 {
     /// <summary>
     /// Builds a closed connection object ready to be used.
@@ -92,12 +92,23 @@ public class EhrConnection
     /// <param name="login"></param>
     /// <param name="password"></param>
     public EhrConnection(string url, string login, string password)
+        : this(url, login, password, null) { }
+
+    public EhrConnection(string url, string login, string password, HttpClient? client)
     {
-        Url = url;
-        if (!Url.EndsWith("/", StringComparison.Ordinal))
-            Url += "/";
-        Login = login;
-        Password = password;
+        Url = !string.IsNullOrWhiteSpace(url) ? url : throw new ArgumentException("EHR URL is empty", nameof(url));
+        if (!Url.EndsWith("/", StringComparison.Ordinal)) Url += "/";
+        Login = !string.IsNullOrWhiteSpace(login) ? login : throw new ArgumentException("EHR login is empty", nameof(login));
+        Password = !string.IsNullOrWhiteSpace(password) ? password : throw new ArgumentException("EHR password is empty", nameof(password));
+        if (client != null) { Client = client; Initialized = true; }
+    }
+
+    private bool _ownsClient;
+
+    public void Dispose()
+    {
+        if (_ownsClient) Client.Dispose();
+        GC.SuppressFinalize(this);
     }
 
     private string Login { get; }
@@ -108,13 +119,14 @@ public class EhrConnection
     private bool Initialized { get; set; }
 
     /// <summary>
-    /// 
+    ///
     /// </summary>
     public void Open()
     {
         if (Initialized) return;
         Log.Logger.Debug("Initializing HttpClient connection");
         Client = new HttpClient();
+        _ownsClient = true;
         Client.Timeout = TimeSpan.FromSeconds(1024);
         Client.DefaultRequestHeaders.ConnectionClose = false;
         Client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
@@ -380,19 +392,15 @@ public class EhrConnection
     /// </summary>
     /// <param name="id"></param>
     /// <returns></returns>
-    public async Task DeleteComposition(Guid id)
+    public Task DeleteComposition(Guid id) => DeleteComposition(id, CancellationToken.None);
+
+    public async Task DeleteComposition(Guid id, CancellationToken cancellationToken)
     {
-        try
-        {
-            HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod.Delete, $"{Url}composition/{id}");
-            requestMessage.Headers.TryAddWithoutValidation("Authorization", GetCredentials());
-            HttpResponseMessage response = await Client.SendAsync(requestMessage);
-            response.EnsureSuccessStatusCode();
-        }
-        catch (Exception ex)
-        {
-            throw new Exception($"Failed to delete composition {id}: {ex.Message}");
-        }
+        using var request = new HttpRequestMessage(HttpMethod.Delete, $"{Url}composition/{id}");
+        request.Headers.TryAddWithoutValidation("Authorization", GetCredentials());
+        using HttpResponseMessage response = await Client.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            throw new EhrApiException("DeleteComposition", response.StatusCode);
     }
 
     /// <summary>
@@ -400,19 +408,15 @@ public class EhrConnection
     /// </summary>
     /// <param name="id"></param>
     /// <returns></returns>
-    public async Task RestoreComposition(Guid id)
+    public Task RestoreComposition(Guid id) => RestoreComposition(id, CancellationToken.None);
+
+    public async Task RestoreComposition(Guid id, CancellationToken cancellationToken)
     {
-        try
-        {
-            HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod.Put, $"{Url}composition/{id}/restore");
-            requestMessage.Headers.TryAddWithoutValidation("Authorization", GetCredentials());
-            HttpResponseMessage response = await Client.SendAsync(requestMessage);
-            response.EnsureSuccessStatusCode();
-        }
-        catch (Exception ex)
-        {
-            throw new Exception($"Failed to restore composition {id}: {ex.Message}");
-        }
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"{Url}composition/{id}/restore");
+        request.Headers.TryAddWithoutValidation("Authorization", GetCredentials());
+        using HttpResponseMessage response = await Client.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            throw new EhrApiException("RestoreComposition", response.StatusCode);
     }
 
     /// <summary>
@@ -438,7 +442,7 @@ public class EhrConnection
                           , c/archetype_details/template_id/value as template_id
                         FROM EHR e
                         CONTAINS VERSIONED_OBJECT vo
-                        CONTAINS COMPOSITION c 
+                        CONTAINS COMPOSITION c
                         WHERE e/ehr_id/value = :ehr_id
                         LIMIT 10000";
         AqlCommand com = new AqlCommand(query, this);
@@ -451,7 +455,7 @@ public class EhrConnection
                 EhrCaseId = reader.GetGuid("ehr_case_id"),
                 Name = reader.GetString("name"),
                 Cuid = reader.GetString("cuid"),
-                Link = reader.IsNull("cuid") ? string.Empty : reader.GetString("cuid"),
+                Link = reader.IsNull("link") ? string.Empty : reader.GetString("link"),
                 Atid = reader.GetString("atid"),
                 Meaning = reader.IsNull("meaning") ? string.Empty : reader.GetString("meaning"),
                 Composer = reader.GetString("composer"),
@@ -461,7 +465,7 @@ public class EhrConnection
                 VoId = reader.GetGuid("vo_id"),
                 TemplateId = reader.GetString("template_id")
             });
-        return result.OrderByDescending(x => x.StartTime).ThenBy(x => x.Cuid).ToArray();
+        return CompleteResult(result);
     }
 
     /// <summary>
@@ -487,7 +491,7 @@ public class EhrConnection
                           , c/archetype_details/template_id/value as template_id
                         FROM EHR e
                         CONTAINS VERSIONED_OBJECT vo
-                        CONTAINS COMPOSITION c 
+                        CONTAINS COMPOSITION c
                         WHERE e/ehr_id/value = :ehr_id
                         AND vo/trunk_lifecycle_state/value = 'complete'
                         LIMIT 10000";
@@ -501,7 +505,7 @@ public class EhrConnection
                 EhrCaseId = reader.GetGuid("ehr_case_id"),
                 Name = reader.GetString("name"),
                 Cuid = reader.GetString("cuid"),
-                Link = reader.IsNull("cuid") ? string.Empty : reader.GetString("cuid"),
+                Link = reader.IsNull("link") ? string.Empty : reader.GetString("link"),
                 Atid = reader.GetString("atid"),
                 Meaning = reader.IsNull("meaning") ? string.Empty : reader.GetString("meaning"),
                 Composer = reader.GetString("composer"),
@@ -511,7 +515,7 @@ public class EhrConnection
                 VoId = reader.GetGuid("vo_id"),
                 TemplateId = reader.GetString("template_id")
             });
-        return result.OrderByDescending(x => x.StartTime).ThenBy(x => x.Cuid).ToArray();
+        return CompleteResult(result);
     }
 
     /// <summary>
@@ -531,7 +535,7 @@ public class EhrConnection
                           , c/archetype_details/template_id/value as template_id
                         FROM EHR e
                         CONTAINS VERSIONED_OBJECT vo
-                        CONTAINS COMPOSITION c 
+                        CONTAINS COMPOSITION c
                         WHERE c/context/other_context[at0001]/items[openEHR-EHR-CLUSTER.composition_context_details*]/items[at0035]/value/id = :ehr_case_id
                         AND vo/trunk_lifecycle_state/value = 'complete'
                         LIMIT 10000";
@@ -549,9 +553,9 @@ public class EhrConnection
                 VoId = reader.GetGuid("vo_id"),
                 TemplateId = reader.GetString("template_id")
             });
-        return result.OrderByDescending(x => x.StartTime).ThenBy(x => x.Cuid).ToArray();
+        return CompleteResult(result);
     }
-    
+
     public async Task<OpenEhrDocumetModel[]> GetCompositionsByEhrCaseId(Guid ehrCaseId)
     {
         List<OpenEhrDocumetModel> result = new List<OpenEhrDocumetModel>();
@@ -565,7 +569,7 @@ public class EhrConnection
                           , c/links/target/value as link
                         FROM EHR e
                         CONTAINS VERSIONED_OBJECT vo
-                        CONTAINS COMPOSITION c 
+                        CONTAINS COMPOSITION c
                         WHERE c/context/other_context[at0001]/items[openEHR-EHR-CLUSTER.composition_context_details*]/items[at0035]/value/id = :ehr_case_id
                         LIMIT 10000";
         AqlCommand com = new AqlCommand(query, this);
@@ -583,9 +587,9 @@ public class EhrConnection
                 TemplateId = reader.GetString("template_id"),
                 Link = reader.GetString("link"),
             });
-        return result.OrderByDescending(x => x.StartTime).ThenBy(x => x.Cuid).ToArray();
+        return CompleteResult(result);
     }
-    
+
     public async Task<OpenEhrDocumetModel[]> GetCompositionsByEhrCaseId(Guid ehrCaseId, string[] templateId)
     {
         List<OpenEhrDocumetModel> result = new List<OpenEhrDocumetModel>();
@@ -599,7 +603,7 @@ public class EhrConnection
                           , c/links/target/value as link
                         FROM EHR e
                         CONTAINS VERSIONED_OBJECT vo
-                        CONTAINS COMPOSITION c 
+                        CONTAINS COMPOSITION c
                         WHERE c/context/other_context[at0001]/items[openEHR-EHR-CLUSTER.composition_context_details*]/items[at0035]/value/id = :ehr_case_id
                         AND c/archetype_details/template_id/value MATCHES {:template_id}
                         LIMIT 10000";
@@ -619,7 +623,7 @@ public class EhrConnection
                 TemplateId = reader.GetString("template_id"),
                 Link = reader.GetString("link"),
             });
-        return result.OrderByDescending(x => x.StartTime).ThenBy(x => x.Cuid).ToArray();
+        return CompleteResult(result);
     }
 
     public async Task<OpenEhrDocumetModel[]> GetCompositionsByName(string name, DateTime dtBeg, DateTime dtEnd)
@@ -634,10 +638,10 @@ public class EhrConnection
                           , c/archetype_details/template_id/value as template_id
                         FROM EHR e
                         CONTAINS VERSIONED_OBJECT vo
-                        CONTAINS COMPOSITION c 
+                        CONTAINS COMPOSITION c
                         WHERE c/name/value = :name
                         AND c/context/start_time/value >= :dt_beg
-                        AND c/context/start_time/value <= :dt_end               
+                        AND c/context/start_time/value <= :dt_end
                         LIMIT 10000";
         AqlCommand com = new AqlCommand(query, this);
         com.Parameters.AddWithValue("name", name);
@@ -655,7 +659,7 @@ public class EhrConnection
                 VoId = reader.GetGuid("vo_id"),
                 TemplateId = reader.GetString("template_id")
             });
-        return result.OrderByDescending(x => x.StartTime).ThenBy(x => x.Cuid).ToArray();
+        return CompleteResult(result);
     }
 
     public async Task<OpenEhrDocumetModel[]> GetCompositionsByPeriod(DateTime dtBeg, DateTime dtEnd)
@@ -670,9 +674,9 @@ public class EhrConnection
                           , c/archetype_details/template_id/value as template_id
                         FROM EHR e
                         CONTAINS VERSIONED_OBJECT vo
-                        CONTAINS COMPOSITION c 
+                        CONTAINS COMPOSITION c
                         WHERE c/context/start_time/value >= :dt_beg
-                        AND c/context/start_time/value <= :dt_end               
+                        AND c/context/start_time/value <= :dt_end
                         LIMIT 10000";
         AqlCommand com = new AqlCommand(query, this);
         com.Parameters.AddWithValue("dt_beg", dtBeg);
@@ -689,11 +693,11 @@ public class EhrConnection
                 VoId = reader.GetGuid("vo_id"),
                 TemplateId = reader.GetString("template_id")
             });
-        return result.OrderByDescending(x => x.StartTime).ThenBy(x => x.Cuid).ToArray();
+        return CompleteResult(result);
     }
 
     /// <summary>
-    /// 
+    ///
     /// </summary>
     /// <param name="ehrId"></param>
     /// <returns></returns>
@@ -716,7 +720,7 @@ public class EhrConnection
                         FROM EHR e
                         CONTAINS VERSIONED_OBJECT vo
                         CONTAINS VERSION v[all_versions]
-                        CONTAINS COMPOSITION c 
+                        CONTAINS COMPOSITION c
                         WHERE e/ehr_id/value = :ehr_id
                         LIMIT 10000";
         AqlCommand com = new AqlCommand(query, this);
@@ -729,7 +733,7 @@ public class EhrConnection
                 EhrCaseId = reader.GetGuid("ehr_case_id"),
                 Name = reader.GetString("name"),
                 Cuid = reader.GetString("cuid"),
-                Link = reader.IsNull("cuid") ? string.Empty : reader.GetString("cuid"),
+                Link = reader.IsNull("link") ? string.Empty : reader.GetString("link"),
                 Atid = reader.GetString("atid"),
                 Meaning = reader.IsNull("meaning") ? string.Empty : reader.GetString("meaning"),
                 Composer = reader.GetString("composer"),
@@ -739,15 +743,16 @@ public class EhrConnection
                 VoId = reader.GetGuid("vo_id"),
                 TemplateId = reader.GetString("template_id")
             });
-        return result.OrderByDescending(x => x.StartTime).ThenBy(x => x.Cuid).ToArray();
+        return CompleteResult(result);
     }
 
     /// <summary>
-    /// 
+    ///
     /// </summary>
     /// <param name="compositionUid"></param>
     /// <returns></returns>
     /// <exception cref="Exception"></exception>
+    [Obsolete("Use GetCompositionTagsAsync") ]
     public OpenEhrTagsContainer? GetCompositionTags(string compositionUid)
     {
         try
@@ -757,40 +762,39 @@ public class EhrConnection
             HttpResponseMessage response = Client.Send(requestMessage);
             response.EnsureSuccessStatusCode();
             string jsonResponse = response.Content.ReadAsStringAsync().Result;
-            Log.Logger.Debug("{compositionUid} tags\r\n{jsonResponse}", compositionUid, jsonResponse);
+            Log.Logger.Debug("Read tags for {compositionUid}", compositionUid);
             return JsonConvert.DeserializeObject<OpenEhrTagsContainer>(jsonResponse);
         }
         catch (Exception ex)
         {
-            throw new Exception($"Failed to delete composition {compositionUid}: {ex.Message}");
+            throw new EhrContractException($"Failed to read tags for composition {compositionUid}", ex);
         }
     }
 
     /// <summary>
-    /// 
+    ///
     /// </summary>
     /// <param name="compositionUid"></param>
     /// <returns></returns>
     /// <exception cref="Exception"></exception>
-    public async Task<OpenEhrTagsContainer?> GetCompositionTagsAsync(string compositionUid)
+    public Task<OpenEhrTagsContainer?> GetCompositionTagsAsync(string compositionUid) =>
+        GetCompositionTagsAsync(compositionUid, CancellationToken.None);
+
+    public async Task<OpenEhrTagsContainer?> GetCompositionTagsAsync(string compositionUid, CancellationToken cancellationToken)
     {
-        try
-        {
-            HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod.Get, $"{Url}tagging/{compositionUid}");
-            requestMessage.Headers.TryAddWithoutValidation("Authorization", GetCredentials());
-            HttpResponseMessage response = await Client.SendAsync(requestMessage);
-            response.EnsureSuccessStatusCode();
-            string jsonResponse = await response.Content.ReadAsStringAsync();
-            return JsonConvert.DeserializeObject<OpenEhrTagsContainer>(jsonResponse);
-        }
-        catch (Exception ex)
-        {
-            throw new Exception($"Failed to delete composition {compositionUid}: {ex.Message}");
-        }
+        if (string.IsNullOrWhiteSpace(compositionUid)) throw new ArgumentException("Composition UID is empty", nameof(compositionUid));
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"{Url}tagging/{Uri.EscapeDataString(compositionUid)}");
+        request.Headers.TryAddWithoutValidation("Authorization", GetCredentials());
+        using HttpResponseMessage response = await Client.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            throw new EhrApiException("GetCompositionTags", response.StatusCode);
+        string json = await response.Content.ReadAsStringAsync(cancellationToken);
+        try { return JsonConvert.DeserializeObject<OpenEhrTagsContainer>(json); }
+        catch (JsonException ex) { throw new EhrContractException("Invalid tags response JSON", ex); }
     }
 
     /// <summary>
-    /// 
+    ///
     /// </summary>
     /// <param name="ehrId"></param>
     /// <param name="dtBeg"></param>
@@ -817,7 +821,7 @@ public class EhrConnection
                         FROM EHR e
                         CONTAINS VERSIONED_OBJECT vo
                         CONTAINS VERSION v[all_versions]
-                        CONTAINS COMPOSITION c 
+                        CONTAINS COMPOSITION c
                         WHERE e/ehr_id/value = :ehr_id
                         AND c/context/start_time/value >= :dt_beg
                         AND c/context/start_time/value <= :dt_end
@@ -834,7 +838,7 @@ public class EhrConnection
                     EhrCaseId = reader.GetGuid("ehr_case_id"),
                     Name = reader.GetString("name"),
                     Cuid = reader.GetString("cuid"),
-                    Link = reader.IsNull("cuid") ? string.Empty : reader.GetString("cuid"),
+                    Link = reader.IsNull("link") ? string.Empty : reader.GetString("link"),
                     Atid = reader.GetString("atid"),
                     Meaning = reader.IsNull("meaning") ? string.Empty : reader.GetString("meaning"),
                     Composer = reader.GetString("composer"),
@@ -845,7 +849,7 @@ public class EhrConnection
                     TemplateId = reader.GetString("template_id")
                 });
         }
-        return result.OrderByDescending(x => x.StartTime).ThenBy(x => x.Cuid).ToArray();
+        return CompleteResult(result);
     }
 
     /// <summary>
@@ -873,6 +877,7 @@ public class EhrConnection
     /// </summary>
     /// <param name="ehrId"></param>
     /// <returns></returns>
+    [Obsolete("Use an application workflow with a durable repair journal") ]
     public async Task RepairCase(Guid ehrId)
     {
         await Reindex(ehrId);
@@ -890,23 +895,20 @@ public class EhrConnection
     /// <param name="cuid">The unique identifier of the composition to be tagged.</param>
     /// <param name="tags">Container holding the tags to be added to the composition.</param>
     /// <returns>A task that represents the asynchronous operation of tagging a composition.</returns>
-    public async Task Tag(string cuid, OpenEhrTagsContainer tags)
+    public Task Tag(string cuid, OpenEhrTagsContainer tags) => Tag(cuid, tags, CancellationToken.None);
+
+    public async Task Tag(string cuid, OpenEhrTagsContainer tags, CancellationToken cancellationToken)
     {
-        Tagging preparedTags = new Tagging(cuid, tags.Tags);
-        string serializedTags = JsonConvert.SerializeObject(preparedTags, Formatting.Indented, new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
-        try
-        {
-            StringContent content = new StringContent(serializedTags, null, "application/json");
-            HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod.Post, $"{Url}tagging");
-            requestMessage.Headers.TryAddWithoutValidation("Authorization", GetCredentials());
-            requestMessage.Content = content;
-            HttpResponseMessage response = await Client.SendAsync(requestMessage);
-            response.EnsureSuccessStatusCode();
-        }
-        catch (Exception ex)
-        {
-            throw new Exception($"Failed to tag {cuid}: {ex.Message}");
-        }
+        if (string.IsNullOrWhiteSpace(cuid)) throw new ArgumentException("Composition UID is empty", nameof(cuid));
+        if (tags?.Tags is not { Length: > 0 }) throw new ArgumentException("Tags are empty", nameof(tags));
+        var prepared = new Tagging(cuid, tags.Tags);
+        string json = JsonConvert.SerializeObject(prepared, Formatting.None,
+            new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"{Url}tagging");
+        request.Headers.TryAddWithoutValidation("Authorization", GetCredentials());
+        request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+        using HttpResponseMessage response = await Client.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode) throw new EhrApiException("Tag", response.StatusCode);
     }
 
     /// <summary>
@@ -963,7 +965,7 @@ public class EhrConnection
             requestMessage.Headers.TryAddWithoutValidation("Authorization", GetCredentials());
             requestMessage.Content = new StringContent(content, Encoding.UTF8, "application/json");
             HttpResponseMessage response = await Client.SendAsync(requestMessage);
-            Log.Logger.Debug("Post contribution response: {@Response}", new { response.StatusCode, Body = await response.Content.ReadAsStringAsync() });
+            Log.Logger.Debug("Post contribution status: {StatusCode}", response.StatusCode);
             response.EnsureSuccessStatusCode();
             string json = await response.Content.ReadAsStringAsync();
             ContributionResponse? result = JsonConvert.DeserializeObject<ContributionResponse>(json);
@@ -976,7 +978,7 @@ public class EhrConnection
             throw new Exception($"Failed to post contribution: {ex.Message}");
         }
     }
-    
+
     /// <summary>
     ///     Gets composition body by EHR case ID and template ID in FLAT format
     /// </summary>
@@ -990,28 +992,28 @@ public class EhrConnection
         com.Parameters.AddWithValue("ehr_case_id", ehrCaseId);
         com.Parameters.AddWithValue("template_id", templateId);
         AQLDataReader reader = await com.ExecuteReaderAsync();
-    
+
         if (!await reader.ReadAsync())
         {
             Log.Logger.Information("Состав не найден для ehrCaseId={EhrCaseId} и templateId={TemplateId}", ehrCaseId, templateId);
             return null;
         }
-    
+
         string compUid = reader.GetString("cuid");
-    
+
         try
         {
             HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod.Get, $"{Url}composition/{Uri.EscapeDataString(compUid)}?format=FLAT&meta=true");
             requestMessage.Headers.TryAddWithoutValidation("Authorization", GetCredentials());
             HttpResponseMessage response = await Client.SendAsync(requestMessage);
             string responseBody = await response.Content.ReadAsStringAsync();
-        
+
             if (!response.IsSuccessStatusCode)
             {
-                Log.Logger.Warning("Ошибка получения состава из EHR: {Status} {Body}", response.StatusCode, responseBody);
+                Log.Logger.Warning("Ошибка получения состава из EHR: {Status}", response.StatusCode);
                 return null;
             }
-        
+
             return responseBody;
         }
         catch (Exception ex)
@@ -1034,11 +1036,11 @@ public class EhrConnection
                           , c/links/target/value as link
                         FROM EHR e
                         CONTAINS VERSIONED_OBJECT vo
-                        CONTAINS COMPOSITION c 
+                        CONTAINS COMPOSITION c
                         WHERE c/links/target/value = :composition_id
                         LIMIT 10000";
         AqlCommand com = new AqlCommand(query, this);
-        com.Parameters.AddWithValue("compositionId", $"ehr:compositions/{compositionId.ToString()}");
+        com.Parameters.AddWithValue("composition_id", $"ehr:compositions/{compositionId.ToString()}");
         AQLDataReader reader = await com.ExecuteReaderAsync();
         while (await reader.ReadAsync())
             result.Add(new OpenEhrDocumetModel
@@ -1052,6 +1054,37 @@ public class EhrConnection
                 TemplateId = reader.GetString("template_id"),
                 Link = reader.GetString("link"),
             });
+        return CompleteResult(result);
+    }
+    private static OpenEhrDocumetModel[] CompleteResult(List<OpenEhrDocumetModel> result)
+    {
+        if (result.Count >= 10000)
+            throw new EhrContractException("EHR returned the AQL limit of 10000 rows; the result may be incomplete");
         return result.OrderByDescending(x => x.StartTime).ThenBy(x => x.Cuid).ToArray();
     }
+
+    /// <summary>Reads the current state of one versioned object, including deleted states when exposed by the EHR.</summary>
+    public async Task<CompositionStatus?> GetCompositionStatus(Guid ehrId, Guid voId, CancellationToken cancellationToken = default)
+    {
+        const string query = @"SELECT e/ehr_id/value as ehr_id,
+                                      vo/uid/value as vo_id,
+                                      c/uid/value as cuid,
+                                      vo/trunk_lifecycle_state/value as state
+                               FROM EHR e
+                               CONTAINS VERSIONED_OBJECT vo
+                               CONTAINS COMPOSITION c
+                               WHERE e/ehr_id/value = :ehr_id
+                                 AND vo/uid/value = :vo_id
+                               LIMIT 2";
+        var command = new AqlCommand(query, this);
+        command.Parameters.AddWithValue("ehr_id", ehrId);
+        command.Parameters.AddWithValue("vo_id", voId);
+        AQLDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync()) return null;
+        var result = new CompositionStatus(reader.GetGuid("ehr_id"), reader.GetGuid("vo_id"),
+            reader.GetString("cuid"), reader.GetString("state"));
+        if (await reader.ReadAsync()) throw new EhrContractException("Multiple states returned for one versioned object");
+        return result;
+    }
+
 }

@@ -1,91 +1,106 @@
-﻿using System.Net;
+using System.Net;
 using System.Text;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using OpenEhr.Dto;
-using Serilog;
 
 namespace OpenEhr;
 
+/// <summary>An AQL query with immutable source text and explicitly bound literal values.</summary>
 public class AqlCommand
 {
-    public AQLParameterCollection Parameters = new AQLParameterCollection();
+    private readonly string _query;
+    private readonly EhrConnection _connection;
+
+    public AQLParameterCollection Parameters = new();
 
     public AqlCommand(string query, EhrConnection connection)
     {
-        this.Query = query;
-        this.Connection = connection;
+        _query = !string.IsNullOrWhiteSpace(query) ? query : throw new ArgumentException("AQL is empty", nameof(query));
+        _connection = connection ?? throw new ArgumentNullException(nameof(connection));
     }
 
-    private string Query { get; set; }
-    private EhrConnection Connection { get; }
+    public string GetQueryModel() => BindLiterals(_query, Parameters.InternalList);
 
-    private void ApplyParametersToQuery()
-    {
-        foreach (AqlParameter parameter in Parameters.InternalList)
-            Query = Query.Replace(!parameter.Name.StartsWith(":") ? $":{parameter.Name}" : $"{parameter.Name}", parameter.Value);
-    }
+    public string GetQueryModelEscapeDataString() => Uri.EscapeDataString(GetQueryModel());
 
-    public string GetQueryModel()
-    {
-        ApplyParametersToQuery();
-        return Query;
-    }
+    public Task<AQLDataReader> ExecuteReaderAsync() => ExecuteReaderAsync(CancellationToken.None);
 
-    public string GetQueryModelEscapeDataString()
+    public async Task<AQLDataReader> ExecuteReaderAsync(CancellationToken cancellationToken)
     {
-        ApplyParametersToQuery();
-        return Uri.EscapeDataString(Query);
-    }
-
-    public async Task<AQLDataReader> ExecuteReaderAsync()
-    {
-        JObject sendContent = new JObject();
-        Log.Logger.Debug("ApplyParametersToQuery");
-        ApplyParametersToQuery();
-        sendContent["aql"] = Query;
-        sendContent["aqlParameters"] = new JObject();
-        Log.Logger.Debug("Content: {content}", sendContent.ToString());
-        StringContent content = new StringContent(sendContent.ToString(), Encoding.UTF8, "application/json");
-        HttpRequestMessage? requestMessage = new HttpRequestMessage(HttpMethod.Post, $"{Connection.Url}query");
-        requestMessage.Headers.TryAddWithoutValidation("Authorization", Connection.GetCredentials());
-        requestMessage.Content = content;
-        Log.Logger.Debug("requestMessage is null ? {requestMessage}", requestMessage == null);
-        Log.Logger.Debug("Connection.Client is null ? {ConnectionClient}", Connection.Client == null);
-        Log.Logger.Debug("Sending requestMessage");
-        HttpResponseMessage response = await Connection.Client.SendAsync(requestMessage);
-        string responseBody = await response.Content.ReadAsStringAsync();
-        Log.Logger.Debug("responseBody: {responseBody}", responseBody.ToString());
+        string query = GetQueryModel();
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"{_connection.Url}query");
+        request.Headers.TryAddWithoutValidation("Authorization", _connection.GetCredentials());
+        request.Content = new StringContent(
+            new JObject { ["aql"] = query, ["aqlParameters"] = new JObject() }.ToString(Formatting.None),
+            Encoding.UTF8,
+            "application/json");
+        using HttpResponseMessage response = await _connection.Client.SendAsync(request, cancellationToken);
+        string body = await response.Content.ReadAsStringAsync(cancellationToken);
         if (response.StatusCode != HttpStatusCode.OK)
-            return new AQLDataReader(Array.Empty<JObject>(), response.StatusCode, responseBody);
-        AqlResponse? aqlResponse = JsonConvert.DeserializeObject<AqlResponse>(responseBody);
-        Log.Logger.Debug("StatusCode: {StatusCode}", response.StatusCode);
-        Log.Logger.Debug("aqlResponse is null ? {aqlResponse}", aqlResponse == null);
-        return new AQLDataReader(aqlResponse!.ResultSet, response.StatusCode, responseBody);
+            throw new EhrApiException("AQL query failed", response.StatusCode);
+
+        AqlResponse? payload;
+        try { payload = JsonConvert.DeserializeObject<AqlResponse>(body); }
+        catch (JsonException ex) { throw new EhrContractException("Invalid AQL response JSON", ex); }
+        if (payload?.ResultSet == null)
+            throw new EhrContractException("AQL response has no resultSet");
+        return new AQLDataReader(payload.ResultSet, response.StatusCode, body);
     }
 
-    public async Task<List<JObject>> ExecuteRawQueryAsync()
+    public Task<List<JObject>> ExecuteRawQueryAsync() => ExecuteRawQueryAsync(CancellationToken.None);
+
+    public async Task<List<JObject>> ExecuteRawQueryAsync(CancellationToken cancellationToken)
     {
-        ApplyParametersToQuery();
+        var reader = await ExecuteReaderAsync(cancellationToken);
+        var result = new List<JObject>();
+        while (await reader.ReadAsync()) result.Add(reader.GetObject());
+        return result;
+    }
 
-        List<JObject> resultSet = new List<JObject>();
-        try
+    internal static string BindLiterals(string query, IReadOnlyList<AqlParameter> parameters)
+    {
+        var values = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var parameter in parameters)
         {
-            HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod.Get, $"{Connection.Url}?aql={Uri.EscapeUriString(Query)}");
-            HttpResponseMessage response = await Connection.Client.SendAsync(requestMessage);
-            response.EnsureSuccessStatusCode();
-            string responseBody = await response.Content.ReadAsStringAsync();
-            if (response.StatusCode == HttpStatusCode.OK)
+            string name = parameter.Name.TrimStart(':');
+            if (name.Length == 0 || !values.TryAdd(name, parameter.Value))
+                throw new ArgumentException($"Invalid or duplicate AQL parameter: {parameter.Name}");
+        }
+
+        var used = new HashSet<string>(StringComparer.Ordinal);
+        var result = new StringBuilder(query.Length);
+        bool inString = false;
+        for (int i = 0; i < query.Length; i++)
+        {
+            char ch = query[i];
+            if (ch == '\'')
             {
-                AqlResponse? aqlResponse = JsonConvert.DeserializeObject<AqlResponse>(responseBody);
-                foreach (JObject queryObject in aqlResponse.ResultSet) resultSet.Add(queryObject);
+                result.Append(ch);
+                if (inString && i + 1 < query.Length && query[i + 1] == '\'')
+                    result.Append(query[++i]);
+                else
+                    inString = !inString;
+                continue;
             }
+            if (!inString && ch == ':' && i + 1 < query.Length &&
+                (char.IsAsciiLetter(query[i + 1]) || query[i + 1] == '_'))
+            {
+                int start = ++i;
+                while (i + 1 < query.Length &&
+                       (char.IsAsciiLetterOrDigit(query[i + 1]) || query[i + 1] == '_')) i++;
+                string name = query[start..(i + 1)];
+                if (!values.TryGetValue(name, out string? literal))
+                    throw new ArgumentException($"Missing AQL parameter: {name}");
+                used.Add(name);
+                result.Append(literal);
+                continue;
+            }
+            result.Append(ch);
         }
-        catch (Exception ex)
-        {
-            throw new Exception($"AQLCommand exception: {ex.Message}");
-        }
-
-        return resultSet;
+        if (inString) throw new ArgumentException("Unclosed AQL string literal");
+        foreach (string name in values.Keys)
+            if (!used.Contains(name)) throw new ArgumentException($"Unused AQL parameter: {name}");
+        return result.ToString();
     }
 }

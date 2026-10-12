@@ -86,14 +86,14 @@ public static class Extensions
         Log.Logger.Information("Filtered {filteredResultList} documents", filteredResultList.Count);
         return filteredResultList;
     }
-    
+
     public static T ApplyConversion<T>(JObject targetObject)
     {
         IEnumerable<JProperty> properties = targetObject.Properties();
         // Check and update properties that end with `_str` or `_string`
         foreach (JProperty property in properties.Where(p => p.Name.EndsWith("_str") || p.Name.EndsWith("_string")))
         {
-            Log.Logger.Debug("Found technical parameter {ParamName} with value '{ParamValue}'", property.Name, targetObject[property.Name]?.ToString(Formatting.None));
+            Log.Logger.Debug("Found technical parameter {ParamName}", property.Name);
             targetObject[property.Name] = targetObject[property.Name]?.ToString(Formatting.None);
         }
 
